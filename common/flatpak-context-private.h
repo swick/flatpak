@@ -25,6 +25,8 @@
 #include <flatpak-common-types-private.h>
 #include "flatpak-exports-private.h"
 
+#include <stdint.h>
+
 typedef enum {
   FLATPAK_POLICY_NONE,
   FLATPAK_POLICY_SEE,
@@ -96,6 +98,8 @@ struct FlatpakContext
   GHashTable            *generic_policy;
   GHashTable            *conditional_sockets;
   GHashTable            *conditional_devices;
+  GHashTable            *allowed_usb_devices;
+  GHashTable            *blocked_usb_devices;
 };
 
 typedef gboolean (*FlatpakContextConditionEvaluator) (FlatpakContextConditions conditions);
@@ -193,11 +197,70 @@ gboolean flatpak_context_get_allowed_exports (FlatpakContext *context,
                                               char         ***allowed_prefixes_out,
                                               gboolean       *require_exact_match_out);
 
-
 FlatpakContextSockets flatpak_context_compute_allowed_sockets (FlatpakContext                   *context,
                                                                FlatpakContextConditionEvaluator  evaluator);
 
 FlatpakContextDevices flatpak_context_compute_allowed_devices (FlatpakContext                   *context,
                                                                FlatpakContextConditionEvaluator  evaluator);
+
+/* USB */
+
+typedef struct
+{
+  enum {
+    FLATPAK_USB_RULE_TYPE_ALL,
+    FLATPAK_USB_RULE_TYPE_CLASS,
+    FLATPAK_USB_RULE_TYPE_DEVICE,
+    FLATPAK_USB_RULE_TYPE_VENDOR,
+  } rule_type;
+
+  union {
+    struct {
+      enum {
+        FLATPAK_USB_RULE_CLASS_TYPE_CLASS_ONLY,
+        FLATPAK_USB_RULE_CLASS_TYPE_CLASS_SUBCLASS,
+      } type;
+      uint16_t class;
+      uint16_t subclass;
+    } device_class;
+
+    struct {
+      uint16_t id;
+    } product;
+
+    struct {
+      uint16_t id;
+    } vendor;
+
+  } d;
+
+} FlatpakUsbRule;
+
+gboolean flatpak_context_parse_usb_rule (const char      *data,
+                                         FlatpakUsbRule **out_usb_rule,
+                                         GError         **error);
+
+void flatpak_usb_rule_print (FlatpakUsbRule *usb_rule,
+                             GString        *string);
+
+void flatpak_usb_rule_free (FlatpakUsbRule *usb_rule);
+
+G_DEFINE_AUTOPTR_CLEANUP_FUNC (FlatpakUsbRule, flatpak_usb_rule_free)
+
+typedef struct
+{
+  GPtrArray *rules;
+} FlatpakUsbQuery;
+
+gboolean flatpak_context_parse_usb (const char       *data,
+                                    FlatpakUsbQuery **out_usb_query,
+                                    GError          **error);
+
+void flatpak_usb_query_print (FlatpakUsbQuery *usb_query,
+                              GString         *string);
+
+void flatpak_usb_query_free (FlatpakUsbQuery *usb_query);
+
+G_DEFINE_AUTOPTR_CLEANUP_FUNC (FlatpakUsbQuery, flatpak_usb_query_free)
 
 #endif /* __FLATPAK_CONTEXT_H__ */
