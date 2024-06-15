@@ -122,6 +122,93 @@ flatpak_context_free (FlatpakContext *context)
   g_slice_free (FlatpakContext, context);
 }
 
+static gboolean
+flatpak_context_has_feature (const char *string)
+{
+  if (strcmp (string, "true") == 0)
+    return TRUE;
+
+  return FALSE;
+}
+
+static const char *
+parse_negated (const char *option, gboolean *negated)
+{
+  if (option[0] == '!')
+    {
+      option++;
+      *negated = TRUE;
+    }
+  else
+    {
+      *negated = FALSE;
+    }
+  return option;
+}
+
+typedef enum {
+  FLATPAK_CONTEXT_CONDITIONAL_NEGATION_PARSE,
+  FLATPAK_CONTEXT_CONDITIONAL_NEGATION_OFF,
+  FLATPAK_CONTEXT_CONDITIONAL_NEGATION_ON,
+} FlatpakContextConditionalNegation;
+
+static char *
+parse_conditional (const char  *string,
+                   FlatpakContextConditionalNegation neg,
+                   gboolean    *negated_out,
+                   gboolean    *condition_out,
+                   GError     **error)
+{
+  g_auto(GStrv) tokens = NULL;
+  const char *subject = NULL;
+  gboolean add;
+  gboolean result;
+  int i;
+
+  tokens = g_strsplit (string, ":", -1);
+
+  if (!tokens || !tokens[0])
+    {
+      g_set_error (error, G_OPTION_ERROR, G_OPTION_ERROR_FAILED,
+                   _("Invalid device syntax %s"), string);
+      return NULL;
+    }
+
+  switch (neg)
+    {
+    case FLATPAK_CONTEXT_CONDITIONAL_NEGATION_PARSE:
+      {
+        gboolean negated;
+        subject = parse_negated (tokens[0], &negated);
+        add = !negated;
+      }
+      break;
+    case FLATPAK_CONTEXT_CONDITIONAL_NEGATION_OFF:
+      subject = tokens[0];
+      add = TRUE;
+      break;
+    case FLATPAK_CONTEXT_CONDITIONAL_NEGATION_ON:
+      subject = tokens[0];
+      add = FALSE;
+      break;
+    }
+
+  result = !add;
+  for (i = 2; i < g_strv_length (tokens); i++)
+    result = (flatpak_context_has_feature (tokens[i]) == add || (result == add)) == add;
+
+  if (g_strv_length (tokens) <= 1)
+    result = TRUE;
+
+  if (condition_out)
+    *condition_out = result;
+
+  if (negated_out)
+    *negated_out = !add;
+
+  return g_strdup (subject);
+}
+
 static guint32
 flatpak_context_bitmask_from_string (const char *name, const char **names)
 {
@@ -296,10 +383,26 @@ flatpak_context_sockets_to_args (FlatpakContextSockets sockets,
   return flatpak_context_bitmask_to_args (sockets, valid, flatpak_context_sockets, "--socket", "--nosocket", args);
 }
 
-static FlatpakContextDevices
-flatpak_context_device_from_string (const char *string, GError **error)
+static gboolean
+flatpak_context_device_from_string (const char                         *string,
+                                    FlatpakContextConditionalNegation   neg,
+                                    FlatpakContextDevices              *devices_out,
+                                    gboolean                           *negated_out,
+                                    GError                            **error)
 {
-  FlatpakContextDevices devices = flatpak_context_bitmask_from_string (string, flatpak_context_devices);
+  FlatpakContextDevices devices;
+  g_autofree char *device_name = NULL;
+  gboolean conditional;
+
+  device_name = parse_conditional (string, neg, negated_out, &conditional, error);
+  if (!device_name)
+    {
+      *devices_out = 0;
+      return FALSE;
+    }
+
+  devices = flatpak_context_bitmask_from_string (device_name,
+                                                 flatpak_context_devices);
 
   if (devices == 0)
     {
@@ -307,7 +410,12 @@ flatpak_context_device_from_string (const char *string, GError **error)
       g_set_error (error, G_OPTION_ERROR, G_OPTION_ERROR_FAILED,
                    _("Unknown device type %s, valid types are: %s"), string, values);
     }
-  return devices;
+
+  if (!conditional)
+    devices = 0;
+
+  *devices_out = devices;
+  return TRUE;
 }
 
 static char **
@@ -1120,8 +1228,11 @@ option_device_cb (const gchar *option_name,
   FlatpakContext *context = data;
   FlatpakContextDevices device;
 
-  device = flatpak_context_device_from_string (value, error);
-  if (device == 0)
+  if (!flatpak_context_device_from_string (value,
+                                           FLATPAK_CONTEXT_CONDITIONAL_NEGATION_OFF,
+                                           &device,
+                                           NULL,
+                                           error))
     return FALSE;
 
   flatpak_context_add_devices (context, device);
@@ -1138,8 +1249,11 @@ option_nodevice_cb (const gchar *option_name,
   FlatpakContext *context = data;
   FlatpakContextDevices device;
 
-  device = flatpak_context_device_from_string (value, error);
-  if (device == 0)
+  if (!flatpak_context_device_from_string (value,
+                                           FLATPAK_CONTEXT_CONDITIONAL_NEGATION_ON,
+                                           &device,
+                                           NULL,
+                                           error))
     return FALSE;
 
   flatpak_context_remove_devices (context, device);
@@ -1561,21 +1675,6 @@ flatpak_context_get_options (FlatpakContext *context)
   return group;
 }
 
-static const char *
-parse_negated (const char *option, gboolean *negated)
-{
-  if (option[0] == '!')
-    {
-      option++;
-      *negated = TRUE;
-    }
-  else
-    {
-      *negated = FALSE;
-    }
-  return option;
-}
-
 /*
  * Merge the FLATPAK_METADATA_GROUP_CONTEXT,
  * FLATPAK_METADATA_GROUP_SESSION_BUS_POLICY,
@@ -1650,9 +1749,16 @@ flatpak_context_load_metadata (FlatpakContext *context,
 
       for (i = 0; devices[i] != NULL; i++)
         {
-          FlatpakContextDevices device = flatpak_context_device_from_string (parse_negated (devices[i], &remove), NULL);
-          if (device == 0)
-            g_info ("Unknown device type %s", devices[i]);
+          FlatpakContextDevices device;
+
+          if (!flatpak_context_device_from_string (devices[i],
+                                                   FLATPAK_CONTEXT_CONDITIONAL_NEGATION_PARSE,
+                                                   &device,
+                                                   &remove,
+                                                   NULL))
+            {
+              g_info ("Unknown device type %s", devices[i]);
+            }
           else
             {
               if (remove)
