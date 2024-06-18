@@ -345,9 +345,10 @@ key=v1;v2;
                 <term><option>--nousb=VENDOR_ID:PRODUCT_ID</option></term>
 
                 <listitem><para>
-                    Adds a blocking USB device query to the application metadata. Blocked
-                    devices take precedence over allowed devices. The syntax is exactly
-                    equal to <option>--usb</option>
+                    Adds a blocked USB device query to the application metadata.
+                    Blocked devices take precedence over allowed devices and cannot
+                    be enumerated. The syntax is exactly equal to
+                    <option>--usb</option>
                 </para></listitem>
             </varlistentry>
 
@@ -358,8 +359,9 @@ key=v1;v2;
                     Adds USB device queries to the application metadata from the file
                     FILE_NAME. The line syntax is exactly equal to
                     <option>--usb</option>. Additionally, if it starts with ! then
-                    the query is like for <option>--nousb</option>, and if it starts
-                    with # then the line is ignored as a comment.
+                    the query is like for <option>--nousb</option>.
+                    Lines sthat starts with # are ignored, like a comment. Comments
+                    will not be persisted.
                 </para></listitem>
             </varlistentry>
 
@@ -370,8 +372,7 @@ key=v1;v2;
                     Adds USB device queries to the application metadata from
                     LIST. The syntax is exactly equal to <option>--usb</option>
                     with queries separated by ;. Additionally, if the query starts
-                    with ! then the query is like for <option>--nousb</option>, and
-                    if it starts with # then the line is ignored as a comment.
+                    with ! then the query is like for <option>--nousb</option>.
                 </para></listitem>
             </varlistentry>
 
