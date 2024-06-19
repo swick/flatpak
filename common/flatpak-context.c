@@ -129,10 +129,10 @@ flatpak_context_new (void)
                                                         NULL, (GDestroyNotify) g_ptr_array_unref);
   context->conditional_devices = g_hash_table_new_full (NULL, NULL,
                                                         NULL, (GDestroyNotify) g_ptr_array_unref);
-  context->allowed_usb_devices = g_hash_table_new_full (g_str_hash, g_str_equal,
-                                                        g_free, (GDestroyNotify) flatpak_usb_query_free);
-  context->blocked_usb_devices = g_hash_table_new_full (g_str_hash, g_str_equal,
-                                                        g_free, (GDestroyNotify) flatpak_usb_query_free);
+  context->enumerable_usb_devices = g_hash_table_new_full (g_str_hash, g_str_equal,
+                                                           g_free, (GDestroyNotify) flatpak_usb_query_free);
+  context->hidden_usb_devices = g_hash_table_new_full (g_str_hash, g_str_equal,
+                                                       g_free, (GDestroyNotify) flatpak_usb_query_free);
 
   return context;
 }
@@ -148,8 +148,8 @@ flatpak_context_free (FlatpakContext *context)
   g_hash_table_destroy (context->generic_policy);
   g_hash_table_destroy (context->conditional_sockets);
   g_hash_table_destroy (context->conditional_devices);
-  g_hash_table_destroy (context->allowed_usb_devices);
-  g_hash_table_destroy (context->blocked_usb_devices);
+  g_hash_table_destroy (context->enumerable_usb_devices);
+  g_hash_table_destroy (context->hidden_usb_devices);
   g_slice_free (FlatpakContext, context);
 }
 
@@ -1004,14 +1004,14 @@ static void
 flatpak_context_add_usb_query (FlatpakContext  *context,
                                FlatpakUsbQuery *usb_query)
 {
-  flatpak_context_add_query_to (context->allowed_usb_devices, usb_query);
+  flatpak_context_add_query_to (context->enumerable_usb_devices, usb_query);
 }
 
 static void
 flatpak_context_add_nousb_query (FlatpakContext  *context,
 				 FlatpakUsbQuery *usb_query)
 {
-  flatpak_context_add_query_to (context->blocked_usb_devices, usb_query);
+  flatpak_context_add_query_to (context->hidden_usb_devices, usb_query);
 }
 
 static gboolean
@@ -1019,8 +1019,8 @@ flatpak_context_add_usb_list (FlatpakContext *context,
                               const char     *list,
                               GError        **error)
 {
-  if (!flatpak_context_parse_usb_list (list, context->allowed_usb_devices,
-                                       context->blocked_usb_devices, error))
+  if (!flatpak_context_parse_usb_list (list, context->enumerable_usb_devices,
+                                       context->hidden_usb_devices, error))
     return FALSE;
 
   return TRUE;
@@ -1038,8 +1038,8 @@ flatpak_context_add_usb_list_from_file (FlatpakContext *context,
   if (!g_file_get_contents (path, &contents, NULL, error))
     return FALSE;
 
-  if (!flatpak_context_parse_usb_list (contents, context->allowed_usb_devices,
-                                       context->blocked_usb_devices, error))
+  if (!flatpak_context_parse_usb_list (contents, context->enumerable_usb_devices,
+                                       context->hidden_usb_devices, error))
     return FALSE;
 
   return TRUE;
@@ -1047,8 +1047,8 @@ flatpak_context_add_usb_list_from_file (FlatpakContext *context,
 
 gboolean
 flatpak_context_parse_usb_list (const char     *buffer,
-                                GHashTable     *allowed,
-                                GHashTable     *blocked,
+                                GHashTable     *enumerable,
+                                GHashTable     *hidden,
                                 GError        **error)
 {
   char *line = NULL;
@@ -1096,13 +1096,13 @@ flatpak_context_parse_usb_list (const char     *buffer,
 
               if (blocking)
 	        {
-                  g_hash_table_insert (blocked,
+                  g_hash_table_insert (hidden,
                                        g_string_free (string, FALSE),
                                        g_steal_pointer (&usb_query));
                 }
               else
                 {
-                  g_hash_table_insert (allowed,
+                  g_hash_table_insert (enumerable,
                                        g_string_free (string, FALSE),
                                        g_steal_pointer (&usb_query));
                 }
@@ -1761,11 +1761,11 @@ flatpak_context_merge (FlatpakContext *context,
   flatpak_context_merge_conditionals (context->conditional_devices,
                                       other->conditional_devices);
 
-  g_hash_table_iter_init (&iter, other->allowed_usb_devices);
+  g_hash_table_iter_init (&iter, other->enumerable_usb_devices);
   while (g_hash_table_iter_next (&iter, NULL, &value))
     flatpak_context_add_usb_query (context, value);
 
-  g_hash_table_iter_init (&iter, other->blocked_usb_devices);
+  g_hash_table_iter_init (&iter, other->hidden_usb_devices);
   while (g_hash_table_iter_next (&iter, NULL, &value))
     flatpak_context_add_nousb_query (context, value);
 }
@@ -2745,13 +2745,13 @@ flatpak_context_load_metadata (FlatpakContext *context,
         }
     }
 
-  if (g_key_file_has_key (metakey, FLATPAK_METADATA_GROUP_USB_DEVICES, FLATPAK_METADATA_KEY_USB_ALLOWED_DEVICES, NULL))
+  if (g_key_file_has_key (metakey, FLATPAK_METADATA_GROUP_USB_DEVICES, FLATPAK_METADATA_KEY_USB_ENUMERABLE_DEVICES, NULL))
     {
       g_auto(GStrv) values = NULL;
       size_t count;
 
       values = g_key_file_get_string_list (metakey, FLATPAK_METADATA_GROUP_USB_DEVICES,
-                                           FLATPAK_METADATA_KEY_USB_ALLOWED_DEVICES,
+                                           FLATPAK_METADATA_KEY_USB_ENUMERABLE_DEVICES,
                                            &count, error);
 
       if (!values)
@@ -2768,13 +2768,13 @@ flatpak_context_load_metadata (FlatpakContext *context,
         }
     }
 
-  if (g_key_file_has_key (metakey, FLATPAK_METADATA_GROUP_USB_DEVICES, FLATPAK_METADATA_KEY_USB_BLOCKED_DEVICES, NULL))
+  if (g_key_file_has_key (metakey, FLATPAK_METADATA_GROUP_USB_DEVICES, FLATPAK_METADATA_KEY_USB_HIDDEN_DEVICES, NULL))
     {
       g_auto(GStrv) values = NULL;
       size_t count;
 
       values = g_key_file_get_string_list (metakey, FLATPAK_METADATA_GROUP_USB_DEVICES,
-                                           FLATPAK_METADATA_KEY_USB_BLOCKED_DEVICES,
+                                           FLATPAK_METADATA_KEY_USB_HIDDEN_DEVICES,
                                            &count, error);
 
       if (!values)
@@ -3095,10 +3095,10 @@ flatpak_context_save_metadata (FlatpakContext *context,
     }
 
   g_key_file_remove_group (metakey, FLATPAK_METADATA_GROUP_USB_DEVICES, NULL);
-  flatpak_context_save_usb_devices (context->allowed_usb_devices, metakey,
-                                    FLATPAK_METADATA_KEY_USB_ALLOWED_DEVICES);
-  flatpak_context_save_usb_devices (context->blocked_usb_devices, metakey,
-                                    FLATPAK_METADATA_KEY_USB_BLOCKED_DEVICES);
+  flatpak_context_save_usb_devices (context->enumerable_usb_devices, metakey,
+                                    FLATPAK_METADATA_KEY_USB_ENUMERABLE_DEVICES);
+  flatpak_context_save_usb_devices (context->hidden_usb_devices, metakey,
+                                    FLATPAK_METADATA_KEY_USB_HIDDEN_DEVICES);
 }
 
 void
@@ -3203,18 +3203,18 @@ adds_usb_device (FlatpakContext *old, FlatpakContext *new)
   gpointer value;
 
   /* Does it add new devices to the allowlist? */
-  g_hash_table_iter_init (&iter, new->allowed_usb_devices);
+  g_hash_table_iter_init (&iter, new->enumerable_usb_devices);
   while (g_hash_table_iter_next (&iter, &value, NULL))
     {
-      if (!g_hash_table_contains (old->allowed_usb_devices, value))
+      if (!g_hash_table_contains (old->enumerable_usb_devices, value))
         return TRUE;
     }
 
   /* Does it remove devices from the blocklist? */
-  g_hash_table_iter_init (&iter, old->blocked_usb_devices);
+  g_hash_table_iter_init (&iter, old->hidden_usb_devices);
   while (g_hash_table_iter_next (&iter, &value, NULL))
     {
-      if (!g_hash_table_contains (new->blocked_usb_devices, value))
+      if (!g_hash_table_contains (new->hidden_usb_devices, value))
         return TRUE;
     }
 
@@ -3281,7 +3281,7 @@ flatpak_context_allows_features (FlatpakContext        *context,
 }
 
 char *
-flatpak_context_devices_to_usb_list (GHashTable *devices, gboolean blocked)
+flatpak_context_devices_to_usb_list (GHashTable *devices, gboolean hidden)
 {
   GString *list = g_string_new (NULL);
   GHashTableIter iter;
@@ -3290,7 +3290,7 @@ flatpak_context_devices_to_usb_list (GHashTable *devices, gboolean blocked)
   g_hash_table_iter_init (&iter, devices);
   while (g_hash_table_iter_next (&iter, &value, NULL))
     {
-      if (blocked)
+      if (hidden)
         g_string_append_printf (list, "!%s;", (const char *) value);
       else
         g_string_append_printf (list, "%s;", (const char *) value);
@@ -3375,11 +3375,11 @@ flatpak_context_to_args (FlatpakContext *context,
         }
     }
 
-  usb_list = flatpak_context_devices_to_usb_list (context->allowed_usb_devices, FALSE);
+  usb_list = flatpak_context_devices_to_usb_list (context->enumerable_usb_devices, FALSE);
   g_ptr_array_add (args, g_strdup_printf ("--usb-list=%s", usb_list));
   g_free (usb_list);
 
-  usb_list = flatpak_context_devices_to_usb_list (context->blocked_usb_devices, TRUE);
+  usb_list = flatpak_context_devices_to_usb_list (context->hidden_usb_devices, TRUE);
   g_ptr_array_add (args, g_strdup_printf ("--usb-list=%s", usb_list));
   g_free (usb_list);
 }
