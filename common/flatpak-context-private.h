@@ -95,6 +95,7 @@ struct FlatpakContext
   GHashTable            *system_bus_policy;
   GHashTable            *a11y_bus_policy;
   GHashTable            *generic_policy;
+  GHashTable            *conditional_devices;
 };
 
 extern const char *flatpak_context_sockets[];

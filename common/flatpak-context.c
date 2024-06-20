@@ -110,6 +110,8 @@ flatpak_context_new (void)
   context->a11y_bus_policy = g_hash_table_new_full (g_str_hash, g_str_equal, g_free, NULL);
   context->generic_policy = g_hash_table_new_full (g_str_hash, g_str_equal,
                                                    g_free, (GDestroyNotify) g_strfreev);
+  context->conditional_devices = g_hash_table_new_full (NULL, NULL,
+                                                        NULL, (GDestroyNotify) g_ptr_array_unref);
 
   return context;
 }
@@ -124,6 +126,7 @@ flatpak_context_free (FlatpakContext *context)
   g_hash_table_destroy (context->system_bus_policy);
   g_hash_table_destroy (context->a11y_bus_policy);
   g_hash_table_destroy (context->generic_policy);
+  g_hash_table_destroy (context->conditional_devices);
   g_slice_free (FlatpakContext, context);
 }
 
@@ -2540,6 +2543,7 @@ flatpak_context_reset_permissions (FlatpakContext *context)
   g_hash_table_remove_all (context->session_bus_policy);
   g_hash_table_remove_all (context->system_bus_policy);
   g_hash_table_remove_all (context->generic_policy);
+  g_hash_table_remove_all (context->conditional_devices);
 }
 
 void
@@ -2563,6 +2567,7 @@ flatpak_context_make_sandboxed (FlatpakContext *context)
   g_hash_table_remove_all (context->session_bus_policy);
   g_hash_table_remove_all (context->system_bus_policy);
   g_hash_table_remove_all (context->generic_policy);
+  g_hash_table_remove_all (context->conditional_devices);
 }
 
 const char *dont_mount_in_root[] = {
