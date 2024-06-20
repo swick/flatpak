@@ -1010,6 +1010,29 @@ flatpak_context_take_filesystem (FlatpakContext        *context,
   g_hash_table_insert (context->filesystems, fs, GINT_TO_POINTER (mode));
 }
 
+static void
+flatpak_context_merge_conditionals (GHashTable *conditionals,
+                                    GHashTable *other_conditionals)
+{
+  GHashTableIter iter;
+  gpointer key, value;
+
+  g_hash_table_iter_init (&iter, other_conditionals);
+  while (g_hash_table_iter_next (&iter, &key, &value))
+    {
+      g_autoptr (GPtrArray) array = NULL;
+      GPtrArray *other_array = value;
+
+      if (!g_hash_table_steal_extended (conditionals, key,
+                                        NULL, (gpointer *) &array))
+        array = g_ptr_array_new_with_free_func (g_free);
+
+      g_ptr_array_extend (array, other_array, (GCopyFunc) g_strdup, NULL);
+
+      g_hash_table_insert (conditionals, key, g_steal_pointer (&array));
+    }
+}
+
 void
 flatpak_context_merge (FlatpakContext *context,
                        FlatpakContext *other)
@@ -1071,6 +1094,9 @@ flatpak_context_merge (FlatpakContext *context,
       for (i = 0; policy_values[i] != NULL; i++)
         flatpak_context_apply_generic_policy (context, (char *) key, policy_values[i]);
     }
+
+  flatpak_context_merge_conditionals (context->conditional_devices,
+                                      other->conditional_devices);
 }
 
 static gboolean
