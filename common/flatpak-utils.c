@@ -1,6 +1,7 @@
 /* vi:set et sw=2 sts=2 cin cino=t0,f0,(0,{s,>2s,n-s,^-s,e-s:
  * Copyright © 1995-1998 Free Software Foundation, Inc.
  * Copyright © 2014-2019 Red Hat, Inc
+ * Copyright © 2024 GNOME Foundation, Inc.
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -17,6 +18,7 @@
  *
  * Authors:
  *       Alexander Larsson <alexl@redhat.com>
+ *       Hubert Figuière <hub@figuiere.net>
  */
 
 #include "config.h"
@@ -7414,4 +7416,55 @@ running_under_sudo (void)
     return TRUE;
 
   return FALSE;
+}
+
+/*
+ * Check if the USB portal is available.
+ */
+gboolean
+flatpak_has_usb_portal (void)
+{
+  g_autoptr(GDBusConnection) session_bus = NULL;
+  g_autoptr(GError) error = NULL;
+  g_autoptr(GVariant) ret = NULL;
+
+  session_bus = g_bus_get_sync (G_BUS_TYPE_SESSION, NULL, &error);
+  if (session_bus == NULL)
+    {
+      g_debug ("No session bus available: %s", error ? error->message : "Unknown error");
+      return FALSE;
+    }
+
+  ret = g_dbus_connection_call_sync (session_bus,
+                                     "org.freedesktop.portal.Desktop",
+                                     "/org/freedesktop/portal/desktop",
+                                     "org.freedesktop.DBus.Properties",
+                                     "Get",
+                                     g_variant_new ("(ss)", "org.freedesktop.portal.Usb", "version"),
+                                     G_VARIANT_TYPE ("(v)"),
+                                     0,
+                                     G_MAXINT,
+                                     NULL,
+                                     &error);
+
+  if (ret)
+    {
+      g_autoptr(GVariant) v = NULL;
+      guint portal_version = 0;
+
+      g_variant_get (ret, "(v)", &v);
+      g_variant_get (v, "u", &portal_version);
+      g_debug ("USB portal version %u.", portal_version);
+
+      if (portal_version != 1)
+        return FALSE;
+    }
+  else
+    {
+      g_debug ("USB portal not available: %s", error ? error->message : "Unknown error");
+      return FALSE;
+    }
+
+  g_debug ("USB portal found");
+  return TRUE;
 }

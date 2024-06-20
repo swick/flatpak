@@ -650,6 +650,8 @@ gboolean flatpak_validate_path_characters (const char *path,
 
 gboolean running_under_sudo (void);
 
+gboolean flatpak_has_usb_portal (void);
+
 #define FLATPAK_MESSAGE_ID "c7b39b1e006b464599465e105b361485"
 
 #endif /* __FLATPAK_UTILS_H__ */

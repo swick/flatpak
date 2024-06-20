@@ -264,6 +264,14 @@ flatpak_run_evaluate_conditions (FlatpakContextConditions conditions)
       conditions &= ~FLATPAK_CONTEXT_CONDITION_HAS_WAYLAND;
     }
 
+  if (conditions & FLATPAK_CONTEXT_CONDITION_HAS_USB_PORTAL)
+    {
+      if (!flatpak_has_usb_portal ())
+        return FALSE;
+
+      conditions &= ~FLATPAK_CONTEXT_CONDITION_HAS_USB_PORTAL;
+    }
+
   return conditions == 0;
 }
 
