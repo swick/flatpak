@@ -3316,3 +3316,55 @@ flatpak_context_get_allowed_exports (FlatpakContext *context,
 
   return TRUE;
 }
+
+static gboolean
+flatpak_context_conditional_evaluate (const char               *conditional,
+                                      FlatpakContextConditions  supported)
+{
+  if (strcmp (conditional, "true") == 0)
+    return TRUE;
+  if (strcmp (conditional, "false") == 0)
+    return FALSE;
+  if (strcmp (conditional, "has-input-device") == 0)
+    return !!(supported & FLATPAK_CONTEXT_CONDITION_HAS_INPUT_DEV);
+
+  return FALSE;
+}
+
+static guint32
+flatpak_context_compute_allowed (guint32                   enabled,
+                                 GHashTable               *conditionals,
+                                 FlatpakContextConditions  supported)
+{
+  GHashTableIter iter;
+  gpointer key;
+  GPtrArray *conditions;
+
+  g_hash_table_iter_init (&iter, conditionals);
+  while (g_hash_table_iter_next (&iter, &key, (gpointer *) &conditions))
+    {
+      guint32 bitmask = GPOINTER_TO_INT (key);
+      int i;
+
+      for (i = 0; i < conditions->len; i++)
+        {
+          if (!flatpak_context_conditional_evaluate (conditions->pdata[i],
+                                                     supported))
+            break;
+        }
+
+      if (i == conditions->len)
+        enabled &= ~bitmask;
+    }
+
+  return enabled;
+}
+
+FlatpakContextDevices
+flatpak_context_compute_allowed_devices (FlatpakContext           *context,
+                                         FlatpakContextConditions  supported)
+{
+  return flatpak_context_compute_allowed (context->devices,
+                                          context->conditional_devices,
+                                          supported);
+}

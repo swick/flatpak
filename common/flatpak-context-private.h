@@ -69,6 +69,10 @@ typedef enum {
   FLATPAK_CONTEXT_FEATURE_PER_APP_DEV_SHM = 1 << 4,
 } FlatpakContextFeatures;
 
+typedef enum {
+  FLATPAK_CONTEXT_CONDITION_HAS_INPUT_DEV = 1 << 0,
+} FlatpakContextConditions;
+
 struct FlatpakContext
 {
   FlatpakContextShares   shares;
@@ -180,5 +184,8 @@ gboolean flatpak_context_get_allowed_exports (FlatpakContext *context,
                                               char         ***allowed_extensions_out,
                                               char         ***allowed_prefixes_out,
                                               gboolean       *require_exact_match_out);
+
+FlatpakContextDevices flatpak_context_compute_allowed_devices (FlatpakContext           *context,
+                                                               FlatpakContextConditions  supported);
 
 #endif /* __FLATPAK_CONTEXT_H__ */
