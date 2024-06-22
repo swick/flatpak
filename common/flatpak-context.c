@@ -71,6 +71,7 @@ const char *flatpak_context_devices[] = {
   "kvm",
   "shm",
   "input",
+  "usb",
   NULL
 };
 
@@ -96,13 +97,16 @@ const char *flatpak_context_conditions[] = {
   "true",
   "false",
   "has-input-device",
+  "has-usb-device",
   "has-wayland",
   NULL
 };
 
+/* Conditions which are always true in this version of flatpak */
 FlatpakContextConditions flatpak_context_true_conditions =
   FLATPAK_CONTEXT_CONDITION_TRUE |
-  FLATPAK_CONTEXT_CONDITION_HAS_INPUT_DEV;
+  FLATPAK_CONTEXT_CONDITION_HAS_INPUT_DEV |
+  FLATPAK_CONTEXT_CONDITION_HAS_USB_DEV;
 
 FlatpakContext *
 flatpak_context_new (void)
@@ -3402,7 +3406,6 @@ flatpak_context_compute_allowed (guint32                           enabled,
       if (conditions & FLATPAK_CONTEXT_CONDITION_FALSE)
         break;
 
-      /* Conditions which are always true in this version of flatpak */
       conditions = conditions & ~flatpak_context_true_conditions;
 
       /* Remove the permission if all conditions are satisfied  */

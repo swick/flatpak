@@ -59,6 +59,7 @@ typedef enum {
   FLATPAK_CONTEXT_DEVICE_KVM         = 1 << 2,
   FLATPAK_CONTEXT_DEVICE_SHM         = 1 << 3,
   FLATPAK_CONTEXT_DEVICE_INPUT       = 1 << 4,
+  FLATPAK_CONTEXT_DEVICE_USB         = 1 << 5,
 } FlatpakContextDevices;
 
 typedef enum {
@@ -73,7 +74,8 @@ typedef enum {
   FLATPAK_CONTEXT_CONDITION_TRUE          = 1 << 0,
   FLATPAK_CONTEXT_CONDITION_FALSE         = 1 << 1,
   FLATPAK_CONTEXT_CONDITION_HAS_INPUT_DEV = 1 << 2,
-  FLATPAK_CONTEXT_CONDITION_HAS_WAYLAND   = 1 << 3,
+  FLATPAK_CONTEXT_CONDITION_HAS_USB_DEV   = 1 << 3,
+  FLATPAK_CONTEXT_CONDITION_HAS_WAYLAND   = 1 << 4,
 } FlatpakContextConditions;
 
 struct FlatpakContext
