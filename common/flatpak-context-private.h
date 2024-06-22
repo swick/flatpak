@@ -101,6 +101,7 @@ struct FlatpakContext
   GHashTable            *system_bus_policy;
   GHashTable            *a11y_bus_policy;
   GHashTable            *generic_policy;
+  GHashTable            *conditional_sockets;
   GHashTable            *conditional_devices;
 };
 
@@ -203,6 +204,9 @@ gboolean flatpak_context_get_allowed_exports (FlatpakContext *context,
                                               char         ***allowed_extensions_out,
                                               char         ***allowed_prefixes_out,
                                               gboolean       *require_exact_match_out);
+
+FlatpakContextSockets flatpak_context_compute_allowed_sockets (FlatpakContext                   *context,
+                                                               FlatpakContextConditionEvaluator  evaluator);
 
 FlatpakContextDevices flatpak_context_compute_allowed_devices (FlatpakContext                   *context,
                                                                FlatpakContextConditionEvaluator  evaluator);
