@@ -434,6 +434,14 @@ flatpak_run_add_environment_args (FlatpakBwrap    *bwrap,
             }
         }
 
+      if (devices & FLATPAK_CONTEXT_DEVICE_USB)
+        {
+          g_info ("Allowing USB device access.");
+
+          if (g_file_test ("/dev/bus/usb", G_FILE_TEST_IS_DIR))
+              flatpak_bwrap_add_args (bwrap, "--dev-bind", "/dev/bus/usb", "/dev/bus/usb", NULL);
+        }
+
       if (devices & FLATPAK_CONTEXT_DEVICE_INPUT)
         {
           g_info ("Allowing input device access. Note: raw and virtual input currently require --device=all");
