@@ -252,6 +252,12 @@ flatpak_run_add_extension_args (FlatpakBwrap      *bwrap,
   return TRUE;
 }
 
+static gboolean
+flatpak_run_evaluate_conditions (FlatpakContextConditions conditions)
+{
+  return FALSE;
+}
+
 /*
  * @per_app_dir_lock_fd: If >= 0, make use of per-app directories in
  *  the host's XDG_RUNTIME_DIR to share /tmp between instances.
@@ -276,10 +282,8 @@ flatpak_run_add_environment_args (FlatpakBwrap    *bwrap,
   g_autofree char *xdg_dirs_conf = NULL;
   gboolean home_access = FALSE;
   gboolean sandboxed = (flags & FLATPAK_RUN_FLAG_SANDBOX) != 0;
-  FlatpakContextDevices devices = 0;
-  FlatpakContextConditions conditions = FLATPAK_CONTEXT_CONDITION_HAS_INPUT_DEV;
-
-  devices = flatpak_context_compute_allowed_devices (context, conditions);
+  FlatpakContextDevices devices =
+    flatpak_context_compute_allowed_devices (context, flatpak_run_evaluate_conditions);
 
   if ((context->shares & FLATPAK_CONTEXT_SHARED_IPC) == 0)
     {
