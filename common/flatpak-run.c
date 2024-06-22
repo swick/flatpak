@@ -57,6 +57,7 @@
 #include "flatpak-run-dbus-private.h"
 #include "flatpak-run-private.h"
 #include "flatpak-run-sockets-private.h"
+#include "flatpak-run-wayland-private.h"
 #include "flatpak-utils-base-private.h"
 #include "flatpak-dir-private.h"
 #include "flatpak-instance-private.h"
@@ -255,7 +256,15 @@ flatpak_run_add_extension_args (FlatpakBwrap      *bwrap,
 static gboolean
 flatpak_run_evaluate_conditions (FlatpakContextConditions conditions)
 {
-  return FALSE;
+  if (conditions & FLATPAK_CONTEXT_CONDITION_HAS_WAYLAND)
+    {
+      if (!flatpak_run_has_wayland ())
+        return FALSE;
+
+      conditions &= ~FLATPAK_CONTEXT_CONDITION_HAS_WAYLAND;
+    }
+
+  return conditions == 0;
 }
 
 /*
@@ -284,6 +293,8 @@ flatpak_run_add_environment_args (FlatpakBwrap    *bwrap,
   gboolean sandboxed = (flags & FLATPAK_RUN_FLAG_SANDBOX) != 0;
   FlatpakContextDevices devices =
     flatpak_context_compute_allowed_devices (context, flatpak_run_evaluate_conditions);
+  FlatpakContextSockets sockets =
+    flatpak_context_compute_allowed_sockets (context, flatpak_run_evaluate_conditions);
 
   if ((context->shares & FLATPAK_CONTEXT_SHARED_IPC) == 0)
     {
@@ -500,7 +511,7 @@ flatpak_run_add_environment_args (FlatpakBwrap    *bwrap,
   flatpak_context_append_bwrap_filesystem (context, bwrap, app_id, app_id_dir,
                                            exports, xdg_dirs_conf, home_access);
 
-  flatpak_run_add_socket_args_environment (bwrap, context->shares, context->sockets, app_id, instance_id);
+  flatpak_run_add_socket_args_environment (bwrap, context->shares, sockets, app_id, instance_id);
   flatpak_run_add_session_dbus_args (bwrap, proxy_arg_bwrap, context, flags, app_id);
   flatpak_run_add_system_dbus_args (bwrap, proxy_arg_bwrap, context, flags);
   flatpak_run_add_a11y_dbus_args (bwrap, proxy_arg_bwrap, context, flags);
