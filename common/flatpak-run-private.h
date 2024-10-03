@@ -30,9 +30,6 @@
 #include "flatpak-utils-private.h"
 #include "flatpak-exports-private.h"
 
-gboolean flatpak_run_in_transient_unit (const char *app_id,
-                                        GError    **error);
-
 void     flatpak_run_extend_ld_path       (FlatpakBwrap       *bwrap,
                                            const char         *prepend,
                                            const char         *append);

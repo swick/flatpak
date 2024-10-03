@@ -43,6 +43,9 @@
 #ifdef HAVE_LIBMALCONTENT
 #include <libmalcontent/malcontent.h>
 #endif
+#ifdef HAVE_LIBSYSTEMD
+#include <systemd/sd-login.h>
+#endif
 
 #include "flatpak-syscalls-private.h"
 
@@ -69,6 +72,13 @@
 #include "session-helper/flatpak-session-helper.h"
 
 #define DEFAULT_SHELL "/bin/sh"
+
+static gboolean flatpak_run_in_transient_unit (const char *app_id,
+                                        GError    **error);
+
+static gboolean flatpak_run_set_cgroup_xattrs (const char  *app_id,
+                                               const char  *instance_id,
+                                               GError     **error);
 
 typedef FlatpakSessionHelper AutoFlatpakSessionHelper;
 G_DEFINE_AUTOPTR_CLEANUP_FUNC (AutoFlatpakSessionHelper, g_object_unref)
@@ -511,7 +521,17 @@ flatpak_run_add_environment_args (FlatpakBwrap    *bwrap,
 
   /* Must run this before spawning the dbus proxy, to ensure it
      ends up in the app cgroup */
-  if (!flatpak_run_in_transient_unit (app_id, &my_error))
+  if (flatpak_run_in_transient_unit (app_id, &my_error))
+    {
+      /* Everything that uses this also still has the fallback paths so
+       * failing is okay. This might change in the future. */
+      if (!flatpak_run_set_cgroup_xattrs (app_id, instance_id, &my_error))
+        {
+          g_info ("Failed to set xattrs on cgroup: %s", my_error->message);
+          g_clear_error (&my_error);
+        }
+    }
+  else
     {
       /* We still run along even if we don't get a cgroup, as nothing
          really depends on it. Its just nice to have */
@@ -818,7 +838,7 @@ systemd_unit_name_escape (const gchar *in)
   return g_string_free (str, FALSE);
 }
 
-gboolean
+static gboolean
 flatpak_run_in_transient_unit (const char *appid, GError **error)
 {
   g_autoptr(GDBusConnection) conn = NULL;
@@ -836,6 +856,7 @@ flatpak_run_in_transient_unit (const char *appid, GError **error)
   struct JobData data;
   gboolean res = FALSE;
   g_autoptr(GMainContextPopDefault) main_context = NULL;
+  g_autofree char *cgroup_path;
 
   path = g_strdup_printf ("/run/user/%d/systemd/private", getuid ());
 
@@ -904,6 +925,72 @@ out:
     g_object_unref (manager);
 
   return res;
+}
+
+
+static gboolean
+set_file_xattrs (int          fd,
+                 const char  *key,
+                 const char  *value,
+                 GError     **error)
+{
+  if (TEMP_FAILURE_RETRY (fsetxattr (fd,
+                                     (char *) key,
+                                     value,
+                                     strlen (value),
+                                     0)) < 0)
+    return glnx_throw_errno_prefix (error, "Failed setting xattr");
+
+  return TRUE;
+}
+
+#define CONTAINERS1_XATTR           "user.xdg.containers1"
+#define CONTAINERS1_XATTR_ENGINE    CONTAINERS1_XATTR ".engine"
+#define CONTAINERS1_XATTR_APP       CONTAINERS1_XATTR ".appid"
+#define CONTAINERS1_XATTR_INSTANCE  CONTAINERS1_XATTR ".instanceid"
+
+#define FLATPAK_ENGINE_ID "org.flatpak"
+
+static gboolean
+flatpak_run_set_cgroup_xattrs (const char  *app_id,
+                               const char  *instance_id,
+                               GError     **error)
+{
+#ifdef HAVE_LIBSYSTEMD
+  g_autofree char *cgroup_path = NULL;
+  glnx_autofd int cgroup_root_dir_fd = -1;
+  glnx_autofd int fd = -1;
+
+  if (sd_pid_get_cgroup (0, &cgroup_path) < 0)
+    return glnx_throw_errno_prefix (error, "Failed to get cgroup path");
+
+  if (!cgroup_path || !cgroup_path[0])
+    {
+      return flatpak_fail_error (error, FLATPAK_ERROR_SETUP_FAILED,
+                                 "Cannot set cgroup xattrs: bad cgroup path");
+    }
+
+  if (!glnx_opendirat (AT_FDCWD, "/sys/fs/cgroup", TRUE, &cgroup_root_dir_fd, error))
+    return FALSE;
+
+  /* the cgroup path starts with a / and we already checked that we can add 1 */
+  if (!glnx_opendirat (cgroup_root_dir_fd, cgroup_path + 1, TRUE, &fd, error))
+    return FALSE;
+
+  if (!set_file_xattrs (fd, CONTAINERS1_XATTR_APP, app_id, error))
+    return FALSE;
+
+  if (!set_file_xattrs (fd, CONTAINERS1_XATTR_INSTANCE, instance_id, error))
+    return FALSE;
+
+  if (!set_file_xattrs (fd, CONTAINERS1_XATTR_ENGINE, FLATPAK_ENGINE_ID, error))
+    return FALSE;
+
+  return TRUE;
+#else
+  return flatpak_fail_error (error, FLATPAK_ERROR_SETUP_FAILED,
+                             _("Cannot set cgroup xattrs: No systemd support built-in"));
+#endif
 }
 
 static void
