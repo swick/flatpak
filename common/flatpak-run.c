@@ -408,6 +408,7 @@ flatpak_run_add_environment_args (FlatpakBwrap    *bwrap,
             /* nvidia OpenCL/CUDA */
             "/dev/nvidia-uvm",
             "/dev/nvidia-uvm-tools",
+            "/dev/udmabuf",
           };
 
           for (i = 0; i < G_N_ELEMENTS (dri_devices); i++)
