@@ -1,17 +1,6 @@
 name: Flatpak CI
 
-on:
-  push:
-    branches:
-    - main
-    - 'flatpak-1.[0-9]+.x'
-  pull_request:
-    branches:
-    - main
-    - 'flatpak-1.[0-9]+.x'
-  merge_group:
-    types:
-    - checks_requested
+on: push
 
 permissions:
   contents: read
@@ -51,7 +40,7 @@ jobs:
       # clash with AddressSanitizer. Instead, the clang build enables those.
       run: |
         meson setup \
-          -Db_sanitize=address,undefined \
+          -Db_sanitize=address \
           -Dgir=disabled \
           -Dgtkdoc=disabled \
           -Dhttp_backend=curl \
@@ -63,12 +52,9 @@ jobs:
         CFLAGS: -O2 -Wp,-D_FORTIFY_SOURCE=2
     - name: Build flatpak
       run: meson compile -C _build
-      env:
-        ASAN_OPTIONS: detect_leaks=0 # Right now we're not fully clean, but this gets us use-after-free etc
     - name: Run tests
       run: meson test -C _build
       env:
-        ASAN_OPTIONS: detect_leaks=0 # Right now we're not fully clean, but this gets us use-after-free etc
         LC_ALL: en_US.UTF-8
     - name: Collect logs on failure
       if: failure() || cancelled()
