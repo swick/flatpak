@@ -1,0 +1,24 @@
+name: Flatpak CI
+
+on: [push, pull_request]
+
+jobs:
+  build-container:
+    name: Container
+    uses: ./.github/workflows/container.yml
+    permissions:
+      packages: write
+
+  build-and-test:
+    name: Build and Test
+    uses: ./.github/workflows/build-and-test.yml
+    needs: build-container
+    with:
+      images: ${{ needs.build-container.outputs.images }}
+      image_options: ${{ needs.build-container.outputs.image_options }}
+
+  checks:
+    name: Checks
+    uses: ./.github/workflows/checks.yml
+    permissions:
+      security-events: write

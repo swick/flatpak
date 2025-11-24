@@ -1,0 +1,96 @@
+on:
+  workflow_call:
+    outputs:
+      images:
+        description: "The build images"
+        value: ${{ jobs.collect.outputs.outcomes }}
+      image_options:
+        description: "The options to use with the image"
+        value: --device /dev/fuse --cap-add SYS_ADMIN --security-opt apparmor:unconfined --privileged
+
+jobs:
+  build-container:
+    name: Create build container
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        image:
+         # bump the tags to rebuild
+         - 'gnomeos:2025-11-24.0'
+         - 'fedora-latest:2025-11-21.13'
+         - 'ubuntu-latest:2025-11-21.10'
+         - 'ubuntu-22.04:2025-11-24.4'
+
+    steps:
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Check if image already exists on GHCR
+        id: check
+        run: |
+          ACTOR="${{ github.actor }}"
+          OWNER="${{ github.repository_owner }}"
+
+          image_name=$(echo "${{ matrix.image }}" | cut -d':' -f1)
+          image="flatpak-ci-${{ matrix.image }}"
+
+          echo "image_name=${image_name}" >> "$GITHUB_OUTPUT"
+
+          image_owner="ghcr.io/${OWNER,,}/${image}"
+          image_actor="ghcr.io/${ACTOR,,}/${image}"
+
+          if docker manifest inspect "${image_owner}" >/dev/null ; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "image=${image_owner}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if docker manifest inspect "${image_actor}" >/dev/null ; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "image=${image_actor}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "exists=false" >> "$GITHUB_OUTPUT"
+          echo "image=${image_owner}" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push
+        if: ${{ steps.check.outputs.exists == 'false' }}
+        uses: docker/build-push-action@v5
+        with:
+          push: true
+          file: .github/workflows/containers/${{ steps.check.outputs.image_name }}.containerfile
+          tags: ${{ steps.check.outputs.image }}
+
+      - name: Record the result
+        run: |
+          jq -cn \
+            --arg name "${{ steps.check.outputs.image_name }}" \
+            --arg image "${{ steps.check.outputs.image }}" \
+            '$ARGS.named' > outcome
+
+      - name: Upload the result
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ hashFiles('outcome') }}
+          path: outcome
+
+  collect:
+    name: Collect build container results
+    runs-on: ubuntu-latest
+    needs: build-container
+    if: ${{ !cancelled() }}
+    outputs:
+      outcomes: ${{ steps.collect.outputs.outcomes }}
+
+    steps:
+      - uses: actions/download-artifact@v4
+      - id: collect
+        run: |
+          outcomes="$(cat */outcome | jq -c --slurp 'map({(.name): .image})|add')"
+          echo $outcomes
+          echo outcomes=$outcomes >> $GITHUB_OUTPUT

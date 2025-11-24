@@ -1,0 +1,124 @@
+env:
+  TESTS_TIMEOUT: 10 # in minutes
+
+on:
+  workflow_call:
+    inputs:
+      images:
+        required: true
+        type: string
+      image_options:
+        required: true
+        type: string
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+
+    container:
+      image: ${{ fromJSON(inputs.images).ubuntu-latest }}
+      env:
+        CFLAGS: -O2 -Wp,-D_FORTIFY_SOURCE=2
+      options: ${{ inputs.image_options }}
+
+    steps:
+      - name: Configure environment
+        run: |
+          git config --global --add safe.directory $GITHUB_WORKSPACE
+
+      - name: Check out flatpak
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+          fetch-depth: 0
+
+      - name: Build flatpak
+        run: |
+          meson setup _build \
+            -Dhttp_backend=curl \
+            -Dinternal_checks=true \
+            -Dinternal_tests=true \
+            -Dinstalled_tests=true
+          meson compile -C _build
+
+      - name: Run flatpak tests
+        run: timeout --signal=KILL -v ${TESTS_TIMEOUT}m meson test -C _build
+
+      - name: Install flatpak
+        run: meson install -C _build
+
+      - name: Run flatpak installed-tests
+        run: |
+          test -n "$(gnome-desktop-testing-runner -l Flatpak)" || exit 1
+          gnome-desktop-testing-runner --report-directory installed-test-logs/ \
+            -t $((TESTS_TIMEOUT * 60)) Flatpak
+
+      - name: Create dist tarball
+        run: |
+          timeout --signal=KILL -v ${TESTS_TIMEOUT}m meson dist -C _build
+
+      - name: Upload test logs
+        uses: actions/upload-artifact@v4
+        if: success() || failure()
+        with:
+          name: test logs
+          path: |
+            installed-test-logs/
+            _build/test-suite.log
+            _build/meson-logs/testlog.txt
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        image:
+# FIXME: GNOME OS is currently missing polkit-agent-1
+#          - 'gnomeos'
+# FIXME: error: Unable to lookup key ID 7B0961FD: GPGME: Unsupported protocol
+# but only when running in github CI
+#          - 'fedora-latest'
+# FIXME: other weird issues, didn't even investigate properly
+#          - 'ubuntu-22.04'
+          - 'ubuntu-latest'
+        compiler: ['gcc', 'clang']
+
+    container:
+      image: ${{ fromJSON(inputs.images)[matrix.image] }}
+      env:
+        CFLAGS: -O2 -Wp,-D_FORTIFY_SOURCE=2
+        CC: ${{ matrix.compiler }}
+      options: ${{ inputs.image_options }}
+
+    steps:
+      - name: Configure environment
+        run: |
+          git config --global --add safe.directory $GITHUB_WORKSPACE
+          echo XDG_DATA_DIRS=$GITHUB_WORKSPACE/tests/share:/usr/local/share:/usr/share | tee -a $GITHUB_ENV
+          echo HOME=/root | tee -a $GITHUB_ENV
+
+      - name: Check out flatpak
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+          fetch-depth: 0
+
+      - name: Build flatpak
+        run: |
+          meson setup _build
+          meson compile -C _build
+
+      - name: Run flatpak tests
+        run: timeout --signal=KILL -v ${TESTS_TIMEOUT}m meson test -C _build
+
+      - name: Upload test logs
+        uses: actions/upload-artifact@v4
+        if: success() || failure()
+        with:
+          name: test logs (${{ matrix.image }}, ${{ matrix.compiler }})
+          path: |
+            installed-test-logs/
+            _build/test-suite.log
+            _build/meson-logs/testlog.txt

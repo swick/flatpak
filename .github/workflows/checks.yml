@@ -1,19 +1,48 @@
-on:
-  pull_request:
-  merge_group:
-    types:
-    - checks_requested
+env:
+  TESTS_TIMEOUT: 10 # in minutes
 
-name: Pull Requests
+on:
+  workflow_call:
 
 jobs:
-  message-check:
-    name: Block Autosquash Commits
-
+  potfiles:
+    name: Check POTFILES.in
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Repository checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check POTFILES.in
+        run: .github/workflows/check-potfiles.sh
+
+  shellcheck:
+    name: Differential ShellCheck
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Repository checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Differential ShellCheck
+        uses: redhat-plumbers-in-action/differential-shellcheck@v4
+        with:
+          severity: warning
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+  block-autosquash:
+    name: Block Autosquash Commits
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out flatpak
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Determine PR number
         run: |
@@ -26,7 +55,6 @@ jobs:
             PR_NUMBER="${{ github.event.pull_request.number }}"
           else
             echo "Unsupported event: ${{ github.event_name }}"
-            exit 1
           fi
 
           echo "Resolved PR Number: $PR_NUMBER"
