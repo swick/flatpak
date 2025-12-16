@@ -2215,6 +2215,91 @@ flatpak_run_setup_usr_links (FlatpakBwrap *bwrap,
     }
 }
 
+static void
+flatpak_run_setup_fips (FlatpakBwrap *bwrap,
+                        GFile        *runtime_files)
+{
+  g_autoptr(GFile) runtime_crypto_policies = NULL;
+  g_autoptr(GFile) runtime_fips_backend = NULL;
+  g_autoptr(GFile) runtime_fips_config = NULL;
+  g_autofree char *fips_enabled = NULL;
+  g_autoptr(GError) error = NULL;
+
+  if (!g_file_get_contents ("/proc/sys/crypto/fips_enabled",
+                            &fips_enabled,
+                            NULL, &error))
+    {
+      if (!g_error_matches (error, G_FILE_ERROR, G_FILE_ERROR_NOENT))
+        {
+          g_warning ("Failed to read /proc/sys/crypto/fips_enabled to determine FIPS state: %s",
+                     error->message);
+        }
+
+      return;
+    }
+
+  g_strstrip (fips_enabled);
+
+  if (g_strcmp0 (fips_enabled, "1") != 0)
+    {
+      g_info ("FIPS is disabled");
+      return;
+    }
+
+  runtime_crypto_policies =
+    g_file_resolve_relative_path (runtime_files, "etc/crypto-policies");
+
+  if (!g_file_query_exists (runtime_crypto_policies, NULL))
+    {
+      g_info ("FIPS is enabled, but runtime does not support it");
+      return;
+    }
+
+  runtime_fips_backend =
+    g_file_resolve_relative_path (runtime_files,
+                                  "share/crypto-policies/back-ends/FIPS");
+
+  if (!g_file_query_exists (runtime_fips_backend, NULL))
+    {
+      g_info ("FIPS is enabled, but runtime does not support it");
+      return;
+    }
+
+  runtime_fips_config =
+    g_file_resolve_relative_path (runtime_files,
+                                  "share/crypto-policies/default-fips-config");
+
+  if (g_file_query_exists (runtime_fips_config, NULL))
+    {
+      flatpak_bwrap_add_args (bwrap, "--ro-bind",
+                              flatpak_file_get_path_cached (runtime_fips_config),
+                              "/etc/crypto-policies/config",
+                              NULL);
+    }
+  else
+    {
+      if (!flatpak_bwrap_add_args_data (bwrap,
+                                        "default-fips-config",
+                                        "FIPS\n",
+                                        -1,
+                                        "/etc/crypto-policies/config",
+                                        &error))
+        {
+          g_warning ("Failed to enable FIPS configuration: "
+                     "creating default-fips-config tmpfile failed: %s",
+                     error->message);
+          return;
+        }
+    }
+
+  flatpak_bwrap_add_args (bwrap, "--ro-bind",
+                          flatpak_file_get_path_cached (runtime_fips_backend),
+                          "/etc/crypto-policies/back-ends",
+                          NULL);
+
+  g_info ("Enabled FIPS configuration");
+}
+
 /* Directories in /sys to share with the sandbox if accessible. */
 static const char *const sysfs_dirs[] =
 {
@@ -2404,6 +2489,8 @@ flatpak_run_setup_base_argv (FlatpakBwrap   *bwrap,
             }
         }
     }
+
+  flatpak_run_setup_fips (bwrap, runtime_files);
 
   if (app_id_dir != NULL)
     {
