@@ -211,6 +211,7 @@ sources = [
   'flatpak-run.c',
   'flatpak-run-cups.c',
   'flatpak-run-dbus.c',
+  'flatpak-run-dri.c',
   'flatpak-run-pulseaudio.c',
   'flatpak-run-sockets.c',
   'flatpak-run-wayland.c',

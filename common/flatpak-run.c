@@ -57,6 +57,7 @@
 
 #include "flatpak-dbus-generated.h"
 #include "flatpak-run-dbus-private.h"
+#include "flatpak-run-dri-private.h"
 #include "flatpak-run-private.h"
 #include "flatpak-run-sockets-private.h"
 #include "flatpak-run-wayland-private.h"
@@ -548,6 +549,12 @@ flatpak_run_add_environment_args (FlatpakBwrap           *bwrap,
           g_info ("Failed to run in transient scope: %s", my_error->message);
           g_clear_error (&my_error);
         }
+    }
+
+  if (!flatpak_run_maybe_start_virgl_server (bwrap, app_info_path, devices, &my_error))
+    {
+      g_info ("Failed to start a virgl server for GPU fallback: %s", my_error->message);
+      g_clear_error (&my_error);
     }
 
   if (!flatpak_run_maybe_start_dbus_proxy (bwrap, proxy_arg_bwrap,
