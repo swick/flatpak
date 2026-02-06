@@ -927,6 +927,9 @@ void   flatpak_print_escaped_string (const char        *s,
 gboolean flatpak_validate_path_characters (const char *path,
                                            GError    **error);
 
+int flatpak_parse_fd (const char  *fd_string,
+                      GError     **error);
+
 #define FLATPAK_MESSAGE_ID "c7b39b1e006b464599465e105b361485"
 
 #endif /* __FLATPAK_UTILS_H__ */
