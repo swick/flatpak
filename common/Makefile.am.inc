@@ -202,6 +202,7 @@ libflatpak_common_la_CFLAGS = \
 	$(SYSTEMD_CFLAGS) \
 	$(XAUTH_CFLAGS) \
 	$(XML_CFLAGS) \
+	libglnx.la \
 	$(NULL)
 libflatpak_common_la_LIBADD = \
 	$(AM_LIBADD) \
@@ -249,7 +250,6 @@ libflatpak_la_LIBADD = \
 	$(AM_LIBADD) \
 	libflatpak-common.la \
 	libflatpak-common-base.la \
-	libglnx.la \
 	$(BASE_LIBS)	\
 	$(OSTREE_LIBS)	\
 	$(SOUP_LIBS)	\
