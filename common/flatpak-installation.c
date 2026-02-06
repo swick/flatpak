@@ -710,6 +710,7 @@ flatpak_installation_launch_full (FlatpakInstallation *self,
                         NULL,
                         NULL, 0, -1,
                         &instance_dir,
+                        NULL, NULL,
                         cancellable, error))
     return FALSE;
 

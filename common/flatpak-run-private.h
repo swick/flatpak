@@ -200,6 +200,8 @@ gboolean flatpak_run_app (FlatpakDecomposed  *app_ref,
                           int                 n_args,
                           int                 instance_id_fd,
                           char              **instance_dir_out,
+                          GArray             *bind_fds,
+                          GArray             *ro_bind_fds,
                           GCancellable       *cancellable,
                           GError            **error);
 

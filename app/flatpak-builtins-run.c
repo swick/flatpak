@@ -380,6 +380,8 @@ flatpak_builtin_run (int argc, char **argv, GCancellable *cancellable, GError **
                         rest_argc - 1,
                         opt_instance_id_fd,
                         NULL,
+                        NULL,
+                        NULL,
                         cancellable,
                         error))
     return FALSE;
