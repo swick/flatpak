@@ -8015,10 +8015,14 @@ apply_extra_data (FlatpakDir   *self,
                           NULL);
 
   glnx_autofd int usr_fd = -1;
-  usr_fd = open (flatpak_file_get_path_cached (runtime_files),
-                 O_PATH | O_CLOEXEC | O_NOFOLLOW);
-  if (usr_fd < 0)
-    return glnx_throw_errno_prefix (error, "Failed to open runtime files");
+
+  if (runtime_files != NULL)
+    {
+      usr_fd = open (flatpak_file_get_path_cached (runtime_files),
+                     O_PATH | O_CLOEXEC | O_NOFOLLOW);
+      if (usr_fd < 0)
+        return glnx_throw_errno_prefix (error, "Failed to open runtime files");
+    }
 
   if (!flatpak_run_setup_base_argv (bwrap, usr_fd, NULL, runtime_arch,
                                     /* Might need multiarch in apply_extra (see e.g. #3742). Should be pretty safe in this limited context */
