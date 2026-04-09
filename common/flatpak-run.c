@@ -2842,6 +2842,10 @@ flatpak_run_add_app_info_args (FlatpakBwrap       *bwrap,
   return TRUE;
 }
 
+/*
+ * @runtime_fd: the /usr for the runtime, or -1 if running with no runtime,
+ *  perhaps to unpack extra-data
+ */
 static void
 add_tzdata_args (FlatpakBwrap *bwrap,
                  int           runtime_fd)
@@ -2853,14 +2857,19 @@ add_tzdata_args (FlatpakBwrap *bwrap,
   g_autofree char *runtime_zoneinfo = NULL;
   g_autoptr(GError) error = NULL;
 
+  g_return_if_fail (runtime_fd >= -1);
+
   raw_timezone = flatpak_get_timezone ();
   timezone_content = g_strdup_printf ("%s\n", raw_timezone);
   localtime_content = g_strconcat ("../usr/share/zoneinfo/", raw_timezone, NULL);
 
-  zoneinfo_fd = glnx_chaseat (runtime_fd, "share/zoneinfo",
-                              GLNX_CHASE_RESOLVE_BENEATH |
-                              GLNX_CHASE_MUST_BE_DIRECTORY,
-                              NULL);
+  if (runtime_fd >= 0)
+    {
+      zoneinfo_fd = glnx_chaseat (runtime_fd, "share/zoneinfo",
+                                  GLNX_CHASE_RESOLVE_BENEATH |
+                                  GLNX_CHASE_MUST_BE_DIRECTORY,
+                                  NULL);
+    }
 
   runtime_zoneinfo = g_strconcat ("share/zoneinfo/", raw_timezone, NULL);
 
@@ -3370,6 +3379,10 @@ setup_seccomp (FlatpakBwrap   *bwrap,
 }
 #endif
 
+/*
+ * @runtime_fd: the /usr for the runtime, or -1 if running with no runtime,
+ *  perhaps to unpack extra-data
+ */
 static void
 flatpak_run_setup_usr_links (FlatpakBwrap *bwrap,
                              int          runtime_fd,
@@ -3423,6 +3436,10 @@ flatpak_run_setup_usr_links (FlatpakBwrap *bwrap,
     }
 }
 
+/*
+ * @runtime_fd: the /usr for the runtime, or -1 if running with no runtime,
+ *  perhaps to unpack extra-data
+ */
 gboolean
 flatpak_run_setup_base_argv (FlatpakBwrap   *bwrap,
                              int             runtime_fd,
@@ -3438,6 +3455,8 @@ flatpak_run_setup_base_argv (FlatpakBwrap   *bwrap,
   struct group *g;
   gulong pers;
   gid_t gid = getgid ();
+
+  g_return_val_if_fail (runtime_fd >= -1, FALSE);
 
   run_dir = g_strdup_printf ("/run/user/%d", getuid ());
 
@@ -3512,7 +3531,8 @@ flatpak_run_setup_base_argv (FlatpakBwrap   *bwrap,
   else if (g_file_test ("/var/lib/dbus/machine-id", G_FILE_TEST_EXISTS))
     flatpak_bwrap_add_args (bwrap, "--ro-bind", "/var/lib/dbus/machine-id", "/etc/machine-id", NULL);
 
-  if ((flags & FLATPAK_RUN_FLAG_WRITABLE_ETC) == 0)
+  if (runtime_fd >= 0
+      && (flags & FLATPAK_RUN_FLAG_WRITABLE_ETC) == 0)
     {
       g_auto(GLnxDirFdIterator) dfd_iter = { 0, };
       struct dirent *dent;
