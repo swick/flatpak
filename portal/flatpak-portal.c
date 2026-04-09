@@ -255,10 +255,8 @@ typedef struct
 {
   FdMapEntry *fd_map;
   gsize       fd_map_len;
-  int         instance_id_fd;
   gboolean    set_tty;
   int         tty;
-  int         env_fd;
 } ChildSetupData;
 
 typedef struct
@@ -484,12 +482,6 @@ child_setup_func (gpointer user_data)
 
   g_fdwalk_set_cloexec (3);
 
-  if (data->instance_id_fd != -1)
-    drop_cloexec (data->instance_id_fd);
-
-  if (data->env_fd != -1)
-    drop_cloexec (data->env_fd);
-
   /* Unblock all signals */
   sigemptyset (&set);
   if (pthread_sigmask (SIG_SETMASK, &set, NULL) == -1)
@@ -592,7 +584,7 @@ validate_opath_fd (int        fd,
 
 static int
 fd_map_remap_fd (GArray *fd_map,
-                 int    *max_fd_in_out,
+                 int    *next_fd_in_out,
                  int     fd)
 {
   FdMapEntry fd_map_entry;
@@ -600,7 +592,7 @@ fd_map_remap_fd (GArray *fd_map,
   /* Use a fd that hasn't been used yet. We might have to reshuffle
    * fd_map_entry.to, a bit later. */
   fd_map_entry.from = fd;
-  fd_map_entry.to = ++(*max_fd_in_out);
+  fd_map_entry.to = ++(*next_fd_in_out);
   fd_map_entry.final = fd_map_entry.to;
   g_array_append_val (fd_map, fd_map_entry);
 
@@ -623,12 +615,12 @@ handle_spawn (PortalFlatpak         *object,
   GPid pid;
   PidData *pid_data;
   InstanceIdReadData *instance_id_read_data = NULL;
-  gsize i, j, n_fds, n_envs;
+  gsize i, max_fd, n_fds, n_envs;
   const gint *fds = NULL;
   gint fds_len = 0;
   g_autoptr(GArray) fd_map = NULL;
   g_auto(GStrv) env = NULL;
-  gint32 max_fd;
+  gint32 next_fd;
   GKeyFile *app_info;
   g_autoptr(GPtrArray) flatpak_argv = g_ptr_array_new_with_free_func (g_free);
   g_autofree char *app_id = NULL;
@@ -653,7 +645,6 @@ handle_spawn (PortalFlatpak         *object,
   g_autoptr(GVariant) sandbox_expose_fd_ro = NULL;
   g_autoptr(GVariant) app_fd = NULL;
   g_autoptr(GVariant) usr_fd = NULL;
-  g_autoptr(GOutputStream) instance_id_out_stream = NULL;
   guint sandbox_flags = 0;
   gboolean sandboxed;
   gboolean expose_pids;
@@ -669,9 +660,6 @@ handle_spawn (PortalFlatpak         *object,
   g_autoptr(GArray) expose_fds = NULL;
   g_autoptr(GArray) expose_fds_ro = NULL;
   glnx_autofd int instance_sandbox_fd = -1;
-
-  child_setup_data.instance_id_fd = -1;
-  child_setup_data.env_fd = -1;
 
   if (fd_list != NULL)
     fds = g_unix_fd_list_peek_fds (fd_list, &fds_len);
@@ -820,7 +808,7 @@ handle_spawn (PortalFlatpak         *object,
 
   fd_map = g_array_sized_new (FALSE, FALSE, sizeof (FdMapEntry), n_fds);
 
-  max_fd = -1;
+  next_fd = -1;
   for (i = 0; i < n_fds; i++)
     {
       FdMapEntry fd_map_entry;
@@ -855,8 +843,7 @@ handle_spawn (PortalFlatpak         *object,
           child_setup_data.tty = handle_fd;
         }
 
-      max_fd = MAX (max_fd, fd_map_entry.to);
-      max_fd = MAX (max_fd, fd_map_entry.from);
+      next_fd = MAX (next_fd, fd_map_entry.to);
     }
 
   if (testing)
@@ -1098,7 +1085,7 @@ handle_spawn (PortalFlatpak         *object,
       env_fd = g_steal_fd (&env_tmpf.fd);
       g_array_append_val (owned_fds, env_fd);
 
-      remapped_fd = fd_map_remap_fd (fd_map, &max_fd, env_fd);
+      remapped_fd = fd_map_remap_fd (fd_map, &next_fd, env_fd);
 
       g_ptr_array_add (flatpak_argv,
                        g_strdup_printf ("--env-fd=%d", remapped_fd));
@@ -1163,6 +1150,7 @@ handle_spawn (PortalFlatpak         *object,
   notify_start = (arg_flags & FLATPAK_SPAWN_FLAGS_NOTIFY_START) != 0;
   if (notify_start)
     {
+      int remapped_fd;
       int pipe_fds[2];
       if (pipe (pipe_fds) == -1)
         {
@@ -1175,8 +1163,7 @@ handle_spawn (PortalFlatpak         *object,
         }
 
       GInputStream *in_stream = G_INPUT_STREAM (g_unix_input_stream_new (pipe_fds[0], TRUE));
-      /* This is saved to ensure the portal's end gets closed after the exec. */
-      instance_id_out_stream = G_OUTPUT_STREAM (g_unix_output_stream_new (pipe_fds[1], TRUE));
+      g_array_append_val (owned_fds, pipe_fds[1]);
 
       instance_id_read_data = g_new0 (InstanceIdReadData, 1);
 
@@ -1184,9 +1171,9 @@ handle_spawn (PortalFlatpak         *object,
                                  INSTANCE_ID_BUFFER_SIZE - 1, G_PRIORITY_DEFAULT, NULL,
                                  instance_id_read_finish, instance_id_read_data);
 
-      g_ptr_array_add (flatpak_argv, g_strdup_printf ("--instance-id-fd=%d", pipe_fds[1]));
-      child_setup_data.instance_id_fd = pipe_fds[1];
-      max_fd = MAX(max_fd, pipe_fds[1]);
+      remapped_fd = fd_map_remap_fd (fd_map, &next_fd, pipe_fds[1]);
+      g_ptr_array_add (flatpak_argv, g_strdup_printf ("--instance-id-fd=%d",
+                                                      remapped_fd));
     }
 
   if (devel)
@@ -1330,7 +1317,7 @@ handle_spawn (PortalFlatpak         *object,
     {
       int remapped_fd;
 
-      remapped_fd = fd_map_remap_fd (fd_map, &max_fd, g_array_index (expose_fds, int, i));
+      remapped_fd = fd_map_remap_fd (fd_map, &next_fd, g_array_index (expose_fds, int, i));
 
       g_ptr_array_add (flatpak_argv, g_strdup_printf ("--bind-fd=%d",
                                                       remapped_fd));
@@ -1340,7 +1327,7 @@ handle_spawn (PortalFlatpak         *object,
     {
       int remapped_fd;
 
-      remapped_fd = fd_map_remap_fd (fd_map, &max_fd, g_array_index (expose_fds_ro, int, i));
+      remapped_fd = fd_map_remap_fd (fd_map, &next_fd, g_array_index (expose_fds_ro, int, i));
 
       g_ptr_array_add (flatpak_argv, g_strdup_printf ("--ro-bind-fd=%d",
                                                       remapped_fd));
@@ -1372,7 +1359,7 @@ handle_spawn (PortalFlatpak         *object,
 
       g_assert (fds != NULL);   /* otherwise fds_len would be 0 */
 
-      remapped_fd = fd_map_remap_fd (fd_map, &max_fd, fds[handle]);
+      remapped_fd = fd_map_remap_fd (fd_map, &next_fd, fds[handle]);
 
       g_ptr_array_add (flatpak_argv, g_strdup_printf ("--app-fd=%d",
                                                       remapped_fd));
@@ -1398,7 +1385,7 @@ handle_spawn (PortalFlatpak         *object,
 
       g_assert (fds != NULL);   /* otherwise fds_len would be 0 */
 
-      remapped_fd = fd_map_remap_fd (fd_map, &max_fd, fds[handle]);
+      remapped_fd = fd_map_remap_fd (fd_map, &next_fd, fds[handle]);
 
       g_ptr_array_add (flatpak_argv, g_strdup_printf ("--usr-fd=%d",
                                                       remapped_fd));
@@ -1440,32 +1427,25 @@ handle_spawn (PortalFlatpak         *object,
       g_info ("Starting: %s\n", cmd->str);
     }
 
-  /* We make a second pass over the fds to find if any "to" fd index
-     overlaps an already in use fd (i.e. one in the "from" category
-     that are allocated randomly). If a fd overlaps "to" fd then its
-     a caller issue and not our fault, so we ignore that. */
+  max_fd = 0;
+
   for (i = 0; i < fd_map->len; i++)
     {
-      int to_fd = g_array_index (fd_map, FdMapEntry, i).to;
-      gboolean conflict = FALSE;
+      FdMapEntry *e = &g_array_index (fd_map, FdMapEntry, i);
 
-      /* At this point we're fine with using "from" values for this
-         value (because we handle to==from in the code), or values
-         that are before "i" in the fd_map (because those will be
-         closed at this point when dup:ing). However, we can't
-         reuse a fd that is in "from" for j > i. */
-      for (j = i + 1; j < fd_map->len; j++)
-        {
-          int from_fd = g_array_index(fd_map, FdMapEntry, j).from;
-          if (from_fd == to_fd)
-            {
-              conflict = TRUE;
-              break;
-            }
-        }
+      max_fd = MAX (max_fd, MAX (e->from, e->to));
+    }
 
-      if (conflict)
-        g_array_index (fd_map, FdMapEntry, i).to = ++max_fd;
+  /* To avoid closing any any of the fds accidentally, we dup them to
+   * a fd number which is bigger than all relevant fds, and then dup them
+   * to their final number.
+   */
+  for (i = 0; i < fd_map->len; i++)
+    {
+      FdMapEntry *e = &g_array_index (fd_map, FdMapEntry, i);
+
+      e->final = e->to;
+      e->to = ++max_fd;
     }
 
   child_setup_data.fd_map = &g_array_index (fd_map, FdMapEntry, 0);
