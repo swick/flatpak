@@ -542,6 +542,7 @@ child_setup_func (gpointer user_data)
     }
 }
 
+
 static gboolean
 validate_opath_fd (int        fd,
                    gboolean   needs_writable,
@@ -549,7 +550,9 @@ validate_opath_fd (int        fd,
 {
   int fd_flags;
   struct stat st_buf;
+  struct stat st_buf_path;
   int access_mode;
+  g_autofree char *path = NULL;
 
   /* Must be able to get fd flags */
   fd_flags = fcntl (fd, F_GETFL);
@@ -567,6 +570,20 @@ validate_opath_fd (int        fd,
   /* Must be able to fstat */
   if (fstat (fd, &st_buf) < 0)
     return glnx_throw_errno_prefix (error, "Failed to fstat");
+
+  path = flatpak_get_path_for_fd (fd, error);
+  if (path == NULL)
+    return FALSE;
+
+  /* Verify that this is the same file as the app opened.
+   * Note that this is not security relevant because flatpak-run/bwrap will
+   * check things and abort if something is off. We do this only for backwards
+   * compatibility reasons: we nee to be able to ignore the issue instead of
+   * aborting the entire sandbox setup later. */
+  if (stat (path, &st_buf_path) < 0 ||
+      st_buf.st_dev != st_buf_path.st_dev ||
+      st_buf.st_ino != st_buf_path.st_ino)
+    return glnx_throw (error, "different file inside and outside sandbox");
 
   access_mode = R_OK;
   if (S_ISDIR (st_buf.st_mode))
@@ -1270,10 +1287,18 @@ handle_spawn (PortalFlatpak         *object,
           gint32 handle;
 
           g_variant_get_child (sandbox_expose_fd, i, "h", &handle);
-          if (handle >= 0 && handle < fds_len &&
-              validate_opath_fd (fds[handle], TRUE, &error))
+          if (handle >= 0 && handle < fds_len)
             {
-              g_array_append_val (expose_fds, fds[handle]);
+              if (validate_opath_fd (fds[handle], TRUE, &error))
+                {
+                  g_array_append_val (expose_fds, fds[handle]);
+                }
+              else
+                {
+                  g_info ("unable to get path for sandbox-exposed fd %d, ignoring: %s",
+                          fds[handle], error->message);
+                  g_clear_error (&error);
+                }
             }
           else
             {
@@ -1296,10 +1321,18 @@ handle_spawn (PortalFlatpak         *object,
           gint32 handle;
 
           g_variant_get_child (sandbox_expose_fd_ro, i, "h", &handle);
-          if (handle >= 0 && handle < fds_len &&
-              validate_opath_fd (fds[handle], FALSE, &error))
+          if (handle >= 0 && handle < fds_len)
             {
-              g_array_append_val (expose_fds_ro, fds[handle]);
+              if (validate_opath_fd (fds[handle], FALSE, &error))
+                {
+                  g_array_append_val (expose_fds_ro, fds[handle]);
+                }
+              else
+                {
+                  g_info ("unable to get path for ro sandbox-exposed fd %d, ignoring: %s",
+                          fds[handle], error->message);
+                  g_clear_error (&error);
+                }
             }
           else
             {
