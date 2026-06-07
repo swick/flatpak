@@ -4,7 +4,7 @@
 project(
   'flatpak',
   'c',
-  version : '1.17.8',
+  version : '1.18.0',
   default_options: [
     'warning_level=2',
   ],
