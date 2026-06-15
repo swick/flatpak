@@ -437,33 +437,36 @@ flatpak_set_tty_echo (gboolean echo)
 }
 
 gboolean
-flatpak_get_cursor_pos (int * row, int *col)
+flatpak_get_cursor_pos (int *row, int *col)
 {
-  fd_set readset;
-  struct timeval time;
   struct termios term, initial_term;
-  int res = 0;
+  char buf[32];
 
   tcgetattr (STDIN_FILENO, &initial_term);
   term = initial_term;
   term.c_lflag &= ~ICANON;
   term.c_lflag &= ~ECHO;
+  term.c_cc[VMIN] = 0;
+  term.c_cc[VTIME] = 1;
   tcsetattr (STDIN_FILENO, TCSAFLUSH, &term);
 
-  printf ("\033[6n");
-  fflush (stdout);
+  write (STDOUT_FILENO, "\033[6n", 4);
 
-  FD_ZERO (&readset);
-  FD_SET (STDIN_FILENO, &readset);
-  time.tv_sec = 0;
-  time.tv_usec = 100000;
+  for (size_t i = 0; i < sizeof (buf) - 1; i++)
+    {
+      if (read (STDIN_FILENO, &buf[i], 1) != 1)
+        return FALSE;
 
-  if (select (STDIN_FILENO + 1, &readset, NULL, NULL, &time) == 1)
-    res = scanf ("\033[%d;%dR", row, col);
+      if (buf[i] == 'R')
+        {
+          buf[i] = '\0';
+          break;
+        }
+    }
 
   tcsetattr (STDIN_FILENO, TCSAFLUSH, &initial_term);
 
-  return res == 2;
+  return sscanf (&buf[2], "\033[%d;%d", row, col) == 2;
 }
 
 void
