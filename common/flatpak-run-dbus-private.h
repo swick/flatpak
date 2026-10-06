@@ -28,28 +28,12 @@
 
 G_BEGIN_DECLS
 
-gboolean flatpak_run_add_session_dbus_args (FlatpakBwrap          *app_bwrap,
-                                            FlatpakBwrap          *proxy_arg_bwrap,
-                                            FlatpakContextSockets  sockets,
-                                            FlatpakContext        *context,
-                                            FlatpakRunFlags        flags,
-                                            const char            *app_id);
-
-gboolean flatpak_run_add_system_dbus_args (FlatpakBwrap          *app_bwrap,
-                                           FlatpakBwrap          *proxy_arg_bwrap,
-                                           FlatpakContextSockets  sockets,
-                                           FlatpakContext        *context,
-                                           FlatpakRunFlags        flags);
-
-gboolean flatpak_run_add_a11y_dbus_args (FlatpakBwrap    *app_bwrap,
-                                         FlatpakBwrap    *proxy_arg_bwrap,
-                                         FlatpakContext  *context,
-                                         FlatpakRunFlags  flags,
-                                         const char      *app_id);
-
-gboolean flatpak_run_maybe_start_dbus_proxy (FlatpakBwrap *app_bwrap,
-                                             FlatpakBwrap *proxy_arg_bwrap,
-                                             const char   *app_info_path,
-                                             GError      **error);
+gboolean flatpak_run_add_dbus_args (FlatpakBwrap          *app_bwrap,
+                                    FlatpakContextSockets  sockets,
+                                    FlatpakContext        *context,
+                                    FlatpakRunFlags        flags,
+                                    const char            *app_id,
+                                    const char            *app_info_path,
+                                    GError               **error);
 
 G_END_DECLS
