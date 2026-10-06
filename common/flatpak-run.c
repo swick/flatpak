@@ -393,7 +393,6 @@ flatpak_run_add_environment_args (FlatpakBwrap           *bwrap,
 {
   g_autoptr(GError) my_error = NULL;
   g_autoptr(FlatpakExports) exports = NULL;
-  g_autoptr(FlatpakBwrap) proxy_arg_bwrap = flatpak_bwrap_new (flatpak_bwrap_empty_env);
   g_autofree char *xdg_dirs_conf = NULL;
   gboolean home_access = FALSE;
   gboolean sandboxed = (flags & FLATPAK_RUN_FLAG_SANDBOX) != 0;
@@ -628,9 +627,6 @@ flatpak_run_add_environment_args (FlatpakBwrap           *bwrap,
                                            exports, xdg_dirs_conf, home_access);
 
   flatpak_run_add_socket_args_environment (bwrap, shares, sockets, app_id, instance_id);
-  flatpak_run_add_session_dbus_args (bwrap, proxy_arg_bwrap, sockets, context, flags, app_id);
-  flatpak_run_add_system_dbus_args (bwrap, proxy_arg_bwrap, sockets, context, flags);
-  flatpak_run_add_a11y_dbus_args (bwrap, proxy_arg_bwrap, context, flags, app_id);
 
   /* Must run this before spawning the dbus proxy, to ensure it
      ends up in the app cgroup */
@@ -645,8 +641,8 @@ flatpak_run_add_environment_args (FlatpakBwrap           *bwrap,
         }
     }
 
-  if (!flatpak_run_maybe_start_dbus_proxy (bwrap, proxy_arg_bwrap,
-                                           app_info_path, error))
+  if (!flatpak_run_add_dbus_args (bwrap, sockets, context, flags, app_id,
+                                  app_info_path, error))
     return FALSE;
 
   if (exports_out)

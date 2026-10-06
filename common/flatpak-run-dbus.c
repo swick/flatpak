@@ -25,7 +25,50 @@
 
 #include "flatpak-utils-private.h"
 
+static gboolean flatpak_run_add_session_dbus_args (FlatpakBwrap          *app_bwrap,
+                                                   FlatpakBwrap          *proxy_arg_bwrap,
+                                                   FlatpakContextSockets  sockets,
+                                                   FlatpakContext        *context,
+                                                   FlatpakRunFlags        flags,
+                                                   const char            *app_id);
+static gboolean flatpak_run_add_system_dbus_args (FlatpakBwrap          *app_bwrap,
+                                                  FlatpakBwrap          *proxy_arg_bwrap,
+                                                  FlatpakContextSockets  sockets,
+                                                  FlatpakContext        *context,
+                                                  FlatpakRunFlags        flags);
+static gboolean flatpak_run_add_a11y_dbus_args (FlatpakBwrap    *app_bwrap,
+                                                FlatpakBwrap    *proxy_arg_bwrap,
+                                                FlatpakContext  *context,
+                                                FlatpakRunFlags  flags,
+                                                const char      *app_id);
+static gboolean flatpak_run_maybe_start_dbus_proxy (FlatpakBwrap *app_bwrap,
+                                                    FlatpakBwrap *proxy_arg_bwrap,
+                                                    const char   *app_info_path,
+                                                    GError      **error);
+
 gboolean
+flatpak_run_add_dbus_args (FlatpakBwrap          *app_bwrap,
+                           FlatpakContextSockets  sockets,
+                           FlatpakContext        *context,
+                           FlatpakRunFlags        flags,
+                           const char            *app_id,
+                           const char            *app_info_path,
+                           GError               **error)
+{
+  g_autoptr(FlatpakBwrap) proxy_arg_bwrap = flatpak_bwrap_new (flatpak_bwrap_empty_env);
+
+  flatpak_run_add_session_dbus_args (app_bwrap, proxy_arg_bwrap, sockets, context, flags, app_id);
+  flatpak_run_add_system_dbus_args (app_bwrap, proxy_arg_bwrap, sockets, context, flags);
+  flatpak_run_add_a11y_dbus_args (app_bwrap, proxy_arg_bwrap, context, flags, app_id);
+
+  if (!flatpak_run_maybe_start_dbus_proxy (app_bwrap, proxy_arg_bwrap,
+                                           app_info_path, error))
+    return FALSE;
+
+  return TRUE;
+}
+
+static gboolean
 flatpak_run_maybe_start_dbus_proxy (FlatpakBwrap *app_bwrap,
                                     FlatpakBwrap *proxy_arg_bwrap,
                                     const char   *app_info_path,
@@ -151,7 +194,7 @@ create_proxy_socket (const char *template)
   return g_steal_pointer (&proxy_socket);
 }
 
-gboolean
+static gboolean
 flatpak_run_add_session_dbus_args (FlatpakBwrap          *app_bwrap,
                                    FlatpakBwrap          *proxy_arg_bwrap,
                                    FlatpakContextSockets  sockets,
@@ -234,7 +277,7 @@ flatpak_run_add_session_dbus_args (FlatpakBwrap          *app_bwrap,
   return FALSE;
 }
 
-gboolean
+static gboolean
 flatpak_run_add_system_dbus_args (FlatpakBwrap          *app_bwrap,
                                   FlatpakBwrap          *proxy_arg_bwrap,
                                   FlatpakContextSockets  sockets,
@@ -296,7 +339,7 @@ flatpak_run_add_system_dbus_args (FlatpakBwrap          *app_bwrap,
   return FALSE;
 }
 
-gboolean
+static gboolean
 flatpak_run_add_a11y_dbus_args (FlatpakBwrap    *app_bwrap,
                                 FlatpakBwrap    *proxy_arg_bwrap,
                                 FlatpakContext  *context,
