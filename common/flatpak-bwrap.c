@@ -28,6 +28,7 @@
 #include <sys/socket.h>
 #include <sys/ioctl.h>
 #include <sys/personality.h>
+#include <sys/vfs.h>
 #include <grp.h>
 #include <unistd.h>
 #include <gio/gunixfdlist.h>
@@ -566,6 +567,86 @@ flatpak_bwrap_child_setup_inherit_fds_cb (gpointer user_data)
   GArray *fd_array = user_data;
 
   flatpak_bwrap_child_setup (fd_array, FALSE);
+}
+
+/* Set up @bwrap as a bwrap wrapper that provides a minimal namespace with
+ * a proper /.flatpak-info taken from @app_info_path. If @extra_bind_dir is
+ * non-NULL, it is added as a read-write bind mount. After this call, the
+ * caller should add the executable name and its arguments to @bwrap. */
+gboolean
+flatpak_bwrap_add_wrapper (FlatpakBwrap  *bwrap,
+                           const char    *app_info_path,
+                           const char    *extra_bind_dir,
+                           GError       **error)
+{
+  glnx_autofd int app_info_fd = -1;
+  g_auto(GLnxDirFdIterator) dir_iter = { 0 };
+  struct dirent *dent;
+
+  app_info_fd = open (app_info_path, O_RDONLY | O_CLOEXEC);
+  if (app_info_fd == -1)
+    return glnx_throw_errno_prefix (error, _("Failed to open app info file"));
+
+  if (!glnx_dirfd_iterator_init_at (AT_FDCWD, "/", FALSE, &dir_iter, error))
+    return FALSE;
+
+  flatpak_bwrap_add_arg (bwrap, flatpak_get_bwrap ());
+
+  while (TRUE)
+    {
+      glnx_autofd int o_path_fd = -1;
+      struct statfs stfs;
+
+      if (!glnx_dirfd_iterator_next_dent_ensure_dtype (&dir_iter, &dent, NULL, error))
+        return FALSE;
+
+      if (dent == NULL)
+        break;
+
+      if (strcmp (dent->d_name, ".flatpak-info") == 0)
+        continue;
+
+      o_path_fd = openat (dir_iter.fd, dent->d_name, O_PATH | O_NOFOLLOW | O_CLOEXEC);
+      if (o_path_fd == -1 || fstatfs (o_path_fd, &stfs) != 0 || stfs.f_type == AUTOFS_SUPER_MAGIC)
+        continue;
+
+      if (dent->d_type == DT_DIR)
+        {
+          if (strcmp (dent->d_name, "tmp") == 0 ||
+              strcmp (dent->d_name, "var") == 0 ||
+              strcmp (dent->d_name, "run") == 0)
+            flatpak_bwrap_add_arg (bwrap, "--bind");
+          else
+            flatpak_bwrap_add_arg (bwrap, "--ro-bind");
+
+          flatpak_bwrap_add_arg_printf (bwrap, "/%s", dent->d_name);
+          flatpak_bwrap_add_arg_printf (bwrap, "/%s", dent->d_name);
+        }
+      else if (dent->d_type == DT_LNK)
+        {
+          g_autofree gchar *target = NULL;
+
+          target = glnx_readlinkat_malloc (dir_iter.fd, dent->d_name,
+                                           NULL, error);
+          if (target == NULL)
+            return FALSE;
+          flatpak_bwrap_add_args (bwrap, "--symlink", target, NULL);
+          flatpak_bwrap_add_arg_printf (bwrap, "/%s", dent->d_name);
+        }
+    }
+
+  if (extra_bind_dir)
+    flatpak_bwrap_add_args (bwrap, "--bind", extra_bind_dir, extra_bind_dir, NULL);
+
+  flatpak_bwrap_add_args (bwrap, "--perms", "0600", NULL);
+  flatpak_bwrap_add_args_data_fd (bwrap, "--file", g_steal_fd (&app_info_fd), "/.flatpak-info");
+
+  if (!flatpak_bwrap_bundle_args (bwrap, 1, -1, FALSE, error))
+    return FALSE;
+
+  flatpak_bwrap_add_arg (bwrap, "--");
+
+  return TRUE;
 }
 
 /* Add a --sync-fd argument for bwrap(1).
