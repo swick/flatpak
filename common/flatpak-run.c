@@ -626,7 +626,9 @@ flatpak_run_add_environment_args (FlatpakBwrap           *bwrap,
   flatpak_context_append_bwrap_filesystem (context, bwrap, app_id, app_id_dir,
                                            exports, xdg_dirs_conf, home_access);
 
-  flatpak_run_add_socket_args_environment (bwrap, shares, sockets, app_id, instance_id);
+  if (!flatpak_run_add_socket_args_environment (bwrap, shares, sockets, app_id, instance_id,
+                                                 app_info_path, error))
+    return FALSE;
 
   /* Must run this before spawning the dbus proxy, to ensure it
      ends up in the app cgroup */

@@ -28,9 +28,11 @@
 
 G_BEGIN_DECLS
 
-void flatpak_run_add_x11_args (FlatpakBwrap         *bwrap,
-                               gboolean              allowed,
-                               FlatpakContextShares  shares);
+gboolean flatpak_run_add_x11_args (FlatpakBwrap         *bwrap,
+                                   gboolean              allowed,
+                                   FlatpakContextShares  shares,
+                                   const char           *app_info_path,
+                                   GError              **error);
 
 gboolean flatpak_run_parse_x11_display (const char  *display,
                                         int         *family,

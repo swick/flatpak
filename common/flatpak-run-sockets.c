@@ -169,12 +169,14 @@ flatpak_run_add_ssh_args (FlatpakBwrap *bwrap)
  * `flatpak run`, except for D-Bus which is handled separately due to its
  * use of a proxy.
  */
-void
+gboolean
 flatpak_run_add_socket_args_environment (FlatpakBwrap         *bwrap,
                                          FlatpakContextShares  shares,
                                          FlatpakContextSockets sockets,
                                          const char           *app_id,
-                                         const char           *instance_id)
+                                         const char           *instance_id,
+                                         const char           *app_info_path,
+                                         GError              **error)
 {
   gboolean allow_wayland;
   gboolean inherit_wayland_socket;
@@ -188,7 +190,8 @@ flatpak_run_add_socket_args_environment (FlatpakBwrap         *bwrap,
                                 inherit_wayland_socket);
 
   allow_x11 = (sockets & FLATPAK_CONTEXT_SOCKET_X11) != 0;
-  flatpak_run_add_x11_args (bwrap, allow_x11, shares);
+  if (!flatpak_run_add_x11_args (bwrap, allow_x11, shares, app_info_path, error))
+    return FALSE;
 
   if (sockets & FLATPAK_CONTEXT_SOCKET_SSH_AUTH)
     {
@@ -215,6 +218,8 @@ flatpak_run_add_socket_args_environment (FlatpakBwrap         *bwrap,
     {
       flatpak_run_add_gpg_agent_args (bwrap);
     }
+
+  return TRUE;
 }
 
 /*

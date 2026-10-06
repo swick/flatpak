@@ -28,11 +28,13 @@
 
 G_BEGIN_DECLS
 
-void flatpak_run_add_socket_args_environment (FlatpakBwrap          *bwrap,
-                                              FlatpakContextShares   shares,
-                                              FlatpakContextSockets  sockets,
-                                              const char            *app_id,
-                                              const char            *instance_id);
+gboolean flatpak_run_add_socket_args_environment (FlatpakBwrap          *bwrap,
+                                                  FlatpakContextShares   shares,
+                                                  FlatpakContextSockets  sockets,
+                                                  const char            *app_id,
+                                                  const char            *instance_id,
+                                                  const char            *app_info_path,
+                                                  GError               **error);
 void flatpak_run_add_socket_args_late        (FlatpakBwrap          *bwrap,
                                               FlatpakContextShares   shares);
 
