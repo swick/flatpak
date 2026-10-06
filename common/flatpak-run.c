@@ -626,12 +626,8 @@ flatpak_run_add_environment_args (FlatpakBwrap           *bwrap,
   flatpak_context_append_bwrap_filesystem (context, bwrap, app_id, app_id_dir,
                                            exports, xdg_dirs_conf, home_access);
 
-  if (!flatpak_run_add_socket_args_environment (bwrap, shares, sockets, app_id, instance_id,
-                                                 app_info_path, error))
-    return FALSE;
-
-  /* Must run this before spawning the dbus proxy, to ensure it
-     ends up in the app cgroup */
+  /* Must run this before spawning the dbus proxy or xwayland-satellite,
+     to ensure they end up in the app cgroup */
   if (instance_id)
     {
       if (!flatpak_run_in_transient_unit (app_id, instance_id, &my_error))
@@ -642,6 +638,10 @@ flatpak_run_add_environment_args (FlatpakBwrap           *bwrap,
           g_clear_error (&my_error);
         }
     }
+
+  if (!flatpak_run_add_socket_args_environment (bwrap, shares, sockets, app_id, instance_id,
+                                                 app_info_path, error))
+    return FALSE;
 
   if (!flatpak_run_add_dbus_args (bwrap, sockets, context, flags, app_id,
                                   app_info_path, error))
