@@ -98,6 +98,11 @@ void          flatpak_bwrap_child_setup_inherit_fds_cb (gpointer user_data);
 void          flatpak_bwrap_child_setup (GArray *fd_array,
                                          gboolean close_fd_workaround);
 
+gboolean      flatpak_bwrap_add_wrapper (FlatpakBwrap  *bwrap,
+                                        const char    *app_info_path,
+                                        const char    *extra_bind_dir,
+                                        GError       **error);
+
 gboolean      flatpak_bwrap_add_sync_fd (FlatpakBwrap *bwrap,
                                          int          *sync_fd_user_out,
                                          int          *sync_fd_bwrap_out);
