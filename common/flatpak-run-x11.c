@@ -199,10 +199,12 @@ flatpak_run_parse_x11_display (const char  *display,
   return TRUE;
 }
 
-void
+gboolean
 flatpak_run_add_x11_args (FlatpakBwrap         *bwrap,
                           gboolean              allowed,
-                          FlatpakContextShares  shares)
+                          FlatpakContextShares  shares,
+                          const char           *app_info_path,
+                          GError              **error)
 {
   g_autofree char *x11_socket = NULL;
   const char *display;
@@ -236,7 +238,7 @@ flatpak_run_add_x11_args (FlatpakBwrap         *bwrap,
   if (!allowed)
     {
       flatpak_bwrap_unset_env (bwrap, "DISPLAY");
-      return;
+      return TRUE;
     }
 
   g_info ("Allowing x11 access");
@@ -255,7 +257,7 @@ flatpak_run_add_x11_args (FlatpakBwrap         *bwrap,
         {
           g_warning ("%s", local_error->message);
           flatpak_bwrap_unset_env (bwrap, "DISPLAY");
-          return;
+          return TRUE;
         }
 
       g_assert (display_nr != NULL);
@@ -330,4 +332,6 @@ flatpak_run_add_x11_args (FlatpakBwrap         *bwrap,
     {
       flatpak_bwrap_unset_env (bwrap, "DISPLAY");
     }
+
+  return TRUE;
 }
