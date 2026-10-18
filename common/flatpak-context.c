@@ -67,6 +67,7 @@ const char *flatpak_context_sockets[] = {
   "cups",
   "gpg-agent",
   "inherit-wayland-socket",
+  "host-x11",
   NULL
 };
 
@@ -3479,7 +3480,10 @@ flatpak_context_adds_permissions (FlatpakContext *old,
   /* If we used to allow X11, also allow new fallback X11,
      as that is actually less permissions */
   if (flatpak_permissions_allows_unconditionally (old_socket_permissions, "x11"))
-    flatpak_permissions_set_allowed (old_socket_permissions, "fallback-x11");
+    {
+      flatpak_permissions_set_allowed (old_socket_permissions, "fallback-x11");
+      flatpak_permissions_set_allowed (old_socket_permissions, "host-x11");
+    }
 
   if (flatpak_permissions_adds_permissions (old->shares_permissions,
                                             new->shares_permissions))

@@ -61,6 +61,7 @@ typedef enum {
   FLATPAK_CONTEXT_SOCKET_CUPS        = 1 << 8,
   FLATPAK_CONTEXT_SOCKET_GPG_AGENT   = 1 << 9,
   FLATPAK_CONTEXT_SOCKET_INHERIT_WAYLAND_SOCKET = 1 << 10,
+  FLATPAK_CONTEXT_SOCKET_HOST_X11  = 1 << 11,
 } FlatpakContextSockets;
 
 typedef enum {

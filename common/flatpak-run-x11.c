@@ -301,146 +301,110 @@ start_xwayland_satellite (FlatpakBwrap  *app_bwrap,
 
 gboolean
 flatpak_run_add_x11_args (FlatpakBwrap         *bwrap,
-                          gboolean              allowed,
                           FlatpakContextShares  shares,
                           const char           *app_info_path,
                           GError              **error)
 {
-  g_autofree char *x11_socket = NULL;
-  const char *display;
-  g_autoptr(GError) local_error = NULL;
-
-  /* Always cover /tmp/.X11-unix, that way we never see the host one in case
-   * we have access to the host /tmp. If you request X access we'll put the right
-   * thing in this anyway.
-   *
-   * We need to be a bit careful here, because there are two situations in
-   * which potentially hostile processes have access to /tmp and could
-   * create symlinks, which in principle could cause us to create the
-   * directory and mount the tmpfs at the target of the symlink instead
-   * of in the intended place:
-   *
-   * - With --filesystem=/tmp, it's the host /tmp - but because of the
-   *   special historical status of /tmp/.X11-unix, we can assume that
-   *   it is pre-created by the host system before user code gets to run.
-   *
-   * - When /tmp is shared between all instances of the same app ID,
-   *   in principle the app has control over what's in /tmp, but in
-   *   practice it can't interfere with /tmp/.X11-unix, because we do
-   *   this unconditionally - therefore by the time app code runs,
-   *   /tmp/.X11-unix is already a mount point, meaning the app cannot
-   *   rename or delete it.
-   */
-  flatpak_bwrap_add_args (bwrap,
-                          "--tmpfs", "/tmp/.X11-unix",
-                          NULL);
-
-  if (!allowed)
-    {
-      flatpak_bwrap_unset_env (bwrap, "DISPLAY");
-      return TRUE;
-    }
-
-  g_info ("Allowing x11 access");
-
-  display = g_getenv ("DISPLAY");
-
-  if (g_getenv ("FLATPAK_ENABLE_XWAYLAND_SATELLITE") != NULL ||
-      (flatpak_run_has_wayland () && display == NULL))
+  if (flatpak_run_has_wayland ())
     {
       g_info ("Starting isolated xwayland-satellite");
-
       return start_xwayland_satellite (bwrap, app_info_path, error);
     }
-  else if (display != NULL)
-    {
-      g_autofree char *remote_host = NULL;
-      g_autofree char *display_nr = NULL;
-      int family = -1;
 
-      g_info ("Passing host x11 socket");
+  g_info ("Wayland not available, falling back to host X11 passthrough");
+  flatpak_run_add_host_x11_args (bwrap, shares);
 
-      if (!flatpak_run_parse_x11_display (display, &family, &x11_socket,
-                                          &remote_host, &display_nr,
-                                          &local_error))
-        {
-          g_warning ("%s", local_error->message);
-          flatpak_bwrap_unset_env (bwrap, "DISPLAY");
-          return TRUE;
-        }
+  return TRUE;
+}
 
-      g_assert (display_nr != NULL);
-
-      if (x11_socket != NULL
-          && g_file_test (x11_socket, G_FILE_TEST_EXISTS))
-        {
-          g_assert (g_str_has_prefix (x11_socket, "/tmp/.X11-unix/X"));
-          flatpak_bwrap_add_args (bwrap,
-                                  "--ro-bind", x11_socket, x11_socket,
-                                  NULL);
-          flatpak_bwrap_set_env (bwrap, "DISPLAY", display, TRUE);
-        }
-      else if ((shares & FLATPAK_CONTEXT_SHARED_NETWORK) == 0)
-        {
-          /* If DISPLAY is for example :42 but /tmp/.X11-unix/X42
-           * doesn't exist, then the only way this is going to work
-           * is if the app can connect to abstract socket
-           * @/tmp/.X11-unix/X42 or to TCP port localhost:6042,
-           * either of which requires a shared network namespace.
-           *
-           * Alternatively, if DISPLAY is othermachine:23, then we
-           * definitely need access to TCP port othermachine:6023. */
-          if (x11_socket != NULL)
-            g_warning ("X11 socket %s does not exist in filesystem.",
-                       x11_socket);
-          else
-            g_warning ("Remote X11 display detected.");
-
-          g_warning ("X11 access will require --share=network permission.");
-        }
-      else if (x11_socket != NULL)
-        {
-          g_warning ("X11 socket %s does not exist in filesystem, "
-                     "trying to use abstract socket instead.",
-                     x11_socket);
-        }
-      else
-        {
-          g_debug ("Assuming --share=network gives access to remote X11");
-        }
-
+void
+flatpak_run_add_host_x11_args (FlatpakBwrap         *bwrap,
+                               FlatpakContextShares  shares)
+{
+  g_autofree char *x11_socket = NULL;
+  g_autofree char *remote_host = NULL;
+  g_autofree char *display_nr = NULL;
+  g_autoptr(GError) local_error = NULL;
+  const char *display;
+  int family = -1;
 #ifdef ENABLE_XAUTH
-      g_auto(GLnxTmpfile) xauth_tmpf  = { 0, };
-
-      if (glnx_open_anonymous_tmpfile_full (O_RDWR | O_CLOEXEC, "/tmp", &xauth_tmpf, NULL))
-        {
-          FILE *output = fdopen (xauth_tmpf.fd, "wb");
-          if (output != NULL)
-            {
-              /* fd is now owned by output, steal it from the tmpfile */
-              int tmp_fd = dup (g_steal_fd (&xauth_tmpf.fd));
-              if (tmp_fd != -1)
-                {
-                  static const char dest[] = "/run/flatpak/Xauthority";
-
-                  write_xauth (family, remote_host, display_nr, output);
-                  flatpak_bwrap_add_args_data_fd (bwrap, "--ro-bind-data", tmp_fd, dest);
-
-                  flatpak_bwrap_set_env (bwrap, "XAUTHORITY", dest, TRUE);
-                }
-
-              fclose (output);
-
-              if (tmp_fd != -1)
-                lseek (tmp_fd, 0, SEEK_SET);
-            }
-        }
+  g_auto(GLnxTmpfile) xauth_tmpf = { 0, };
 #endif
+
+  display = g_getenv ("DISPLAY");
+  if (display == NULL)
+    {
+      flatpak_bwrap_unset_env (bwrap, "DISPLAY");
+      return;
+    }
+
+  g_info ("Allowing host x11 access");
+
+  if (!flatpak_run_parse_x11_display (display, &family, &x11_socket,
+                                      &remote_host, &display_nr,
+                                      &local_error))
+    {
+      g_warning ("%s", local_error->message);
+      flatpak_bwrap_unset_env (bwrap, "DISPLAY");
+      return;
+    }
+
+  g_assert (display_nr != NULL);
+
+  if (x11_socket != NULL
+      && g_file_test (x11_socket, G_FILE_TEST_EXISTS))
+    {
+      g_assert (g_str_has_prefix (x11_socket, "/tmp/.X11-unix/X"));
+      flatpak_bwrap_add_args (bwrap,
+                              "--ro-bind", x11_socket, x11_socket,
+                              NULL);
+      flatpak_bwrap_set_env (bwrap, "DISPLAY", display, TRUE);
+    }
+  else if ((shares & FLATPAK_CONTEXT_SHARED_NETWORK) == 0)
+    {
+      if (x11_socket != NULL)
+        g_warning ("X11 socket %s does not exist in filesystem.",
+                   x11_socket);
+      else
+        g_warning ("Remote X11 display detected.");
+
+      g_warning ("X11 access will require --share=network permission.");
+    }
+  else if (x11_socket != NULL)
+    {
+      g_warning ("X11 socket %s does not exist in filesystem, "
+                 "trying to use abstract socket instead.",
+                 x11_socket);
     }
   else
     {
-      flatpak_bwrap_unset_env (bwrap, "DISPLAY");
+      g_debug ("Assuming --share=network gives access to remote X11");
     }
 
-  return TRUE;
+#ifdef ENABLE_XAUTH
+  if (glnx_open_anonymous_tmpfile_full (O_RDWR | O_CLOEXEC, "/tmp", &xauth_tmpf, NULL))
+    {
+      FILE *output = fdopen (xauth_tmpf.fd, "wb");
+
+      if (output != NULL)
+        {
+          int tmp_fd = dup (g_steal_fd (&xauth_tmpf.fd));
+
+          if (tmp_fd != -1)
+            {
+              static const char dest[] = "/run/flatpak/Xauthority";
+
+              write_xauth (family, remote_host, display_nr, output);
+              flatpak_bwrap_add_args_data_fd (bwrap, "--ro-bind-data", tmp_fd, dest);
+
+              flatpak_bwrap_set_env (bwrap, "XAUTHORITY", dest, TRUE);
+            }
+
+          fclose (output);
+
+          if (tmp_fd != -1)
+            lseek (tmp_fd, 0, SEEK_SET);
+        }
+    }
+#endif
 }

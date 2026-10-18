@@ -181,6 +181,7 @@ flatpak_run_add_socket_args_environment (FlatpakBwrap         *bwrap,
   gboolean allow_wayland;
   gboolean inherit_wayland_socket;
   gboolean allow_x11;
+  gboolean allow_host_x11;
 
   allow_wayland = (sockets & FLATPAK_CONTEXT_SOCKET_WAYLAND) != 0;
   inherit_wayland_socket = (sockets & FLATPAK_CONTEXT_SOCKET_INHERIT_WAYLAND_SOCKET) != 0;
@@ -190,8 +191,25 @@ flatpak_run_add_socket_args_environment (FlatpakBwrap         *bwrap,
                                 inherit_wayland_socket);
 
   allow_x11 = (sockets & FLATPAK_CONTEXT_SOCKET_X11) != 0;
-  if (!flatpak_run_add_x11_args (bwrap, allow_x11, shares, app_info_path, error))
-    return FALSE;
+  allow_host_x11 = (sockets & FLATPAK_CONTEXT_SOCKET_HOST_X11) != 0;
+
+  /* Always cover /tmp/.X11-unix so we never see the host one even with
+   * --filesystem=/tmp.  Both X11 code paths bind-mount on top of this. */
+  flatpak_bwrap_add_args (bwrap, "--tmpfs", "/tmp/.X11-unix", NULL);
+
+  if (allow_host_x11)
+    {
+      flatpak_run_add_host_x11_args (bwrap, shares);
+    }
+  else if (allow_x11)
+    {
+      if (!flatpak_run_add_x11_args (bwrap, shares, app_info_path, error))
+        return FALSE;
+    }
+  else
+    {
+      flatpak_bwrap_unset_env (bwrap, "DISPLAY");
+    }
 
   if (sockets & FLATPAK_CONTEXT_SOCKET_SSH_AUTH)
     {

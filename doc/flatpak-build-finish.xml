@@ -156,7 +156,7 @@
                 <listitem><para>
                     Expose a well-known socket to the application. This updates
                     the [Context] group in the metadata.
-                    SOCKET must be one of: x11, wayland, fallback-x11, pulseaudio, system-bus, session-bus,
+                    SOCKET must be one of: x11, wayland, fallback-x11, host-x11, pulseaudio, system-bus, session-bus,
                     ssh-auth, pcsc, cups, gpg-agent, inherit-wayland-socket.
                     This option can be used multiple times.
                 </para><para>
@@ -173,7 +173,7 @@
                 <listitem><para>
                     Don't expose a well known socket to the application. This updates
                     the [Context] group in the metadata.
-                    SOCKET must be one of: x11, wayland, fallback-x11, pulseaudio, system-bus, session-bus,
+                    SOCKET must be one of: x11, wayland, fallback-x11, host-x11, pulseaudio, system-bus, session-bus,
                     ssh-auth, pcsc, cups, gpg-agent, inherit-wayland-socket.
                     This option can be used multiple times.
                 </para></listitem>
@@ -186,7 +186,7 @@
                     Expose a well-known socket to the application conditionally,
                     only when the specified condition is met at runtime.
                     This updates the [Context] group in the metadata.
-                    SOCKET must be one of: x11, wayland, fallback-x11, pulseaudio, system-bus, session-bus,
+                    SOCKET must be one of: x11, wayland, fallback-x11, host-x11, pulseaudio, system-bus, session-bus,
                     ssh-auth, pcsc, cups, gpg-agent, inherit-wayland-socket.
                     CONDITION must be one of: true, false, has-input-device, has-wayland, has-usb-device, has-usb-portal.
                     Conditions can be negated with <literal>!</literal>,
