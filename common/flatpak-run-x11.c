@@ -223,9 +223,108 @@ create_proxy_socket_path (void)
   return g_steal_pointer (&socket_path);
 }
 
+static const char * const usrmerged_dirs[] = { "bin", "lib32", "lib64", "lib", "sbin" };
+static const char * const sysfs_dirs[] =
+{
+  "/sys/block",
+  "/sys/bus",
+  "/sys/class",
+  "/sys/dev",
+  "/sys/devices",
+};
+
+static gboolean
+add_xwayland_sandbox (FlatpakBwrap  *bwrap,
+                      const char    *socket_dir,
+                      const char    *socket_dir_dest,
+                      GError       **error)
+{
+  g_autofree char *xdg_runtime_dir = NULL;
+  g_autofree char *wayland_socket = NULL;
+  const char *wayland_display;
+  const char *home_dir;
+  size_t i;
+
+  xdg_runtime_dir = flatpak_get_real_xdg_runtime_dir ();
+  wayland_display = g_getenv ("WAYLAND_DISPLAY");
+
+  if (wayland_display != NULL)
+    {
+      if (wayland_display[0] == '/')
+        wayland_socket = g_strdup (wayland_display);
+      else if (xdg_runtime_dir != NULL)
+        wayland_socket = g_build_filename (xdg_runtime_dir, wayland_display, NULL);
+    }
+
+  flatpak_bwrap_add_arg (bwrap, flatpak_get_bwrap ());
+
+  flatpak_bwrap_add_args (bwrap,
+                          "--unshare-ipc",
+                          "--unshare-net",
+                          "--unshare-pid",
+                          "--die-with-parent",
+                          "--ro-bind", "/usr", "/usr",
+                          "--ro-bind", "/etc", "/etc",
+                          "--tmpfs", "/tmp",
+                          "--tmpfs", "/run",
+                          "--proc", "/proc",
+                          "--dev", "/dev",
+                          "--setenv", "GIO_USE_VFS", "local",
+                          "--setenv", "XDG_DATA_DIRS", "/usr/local/share:/usr/share",
+                          "--unsetenv", "DBUS_SESSION_BUS_ADDRESS",
+                          "--unsetenv", "TMPDIR",
+                          NULL);
+
+  home_dir = g_get_home_dir ();
+  if (home_dir != NULL)
+    flatpak_bwrap_add_args (bwrap, "--dir", home_dir, NULL);
+
+  for (i = 0; i < G_N_ELEMENTS (usrmerged_dirs); i++)
+    {
+      g_autofree char *path = g_strdup_printf ("/%s", usrmerged_dirs[i]);
+      g_autofree char *target = NULL;
+
+      if (!g_file_test (path, G_FILE_TEST_EXISTS))
+        continue;
+
+      if (g_file_test (path, G_FILE_TEST_IS_SYMLINK))
+        {
+          target = g_file_read_link (path, NULL);
+          if (target != NULL)
+            flatpak_bwrap_add_args (bwrap, "--symlink", target, path, NULL);
+        }
+      else
+        {
+          flatpak_bwrap_add_args (bwrap, "--ro-bind", path, path, NULL);
+        }
+    }
+
+  if (g_file_test ("/dev/dri", G_FILE_TEST_IS_DIR))
+    flatpak_bwrap_add_args (bwrap, "--dev-bind", "/dev/dri", "/dev/dri", NULL);
+
+  for (i = 0; i < G_N_ELEMENTS (sysfs_dirs); i++)
+    {
+      if (access (sysfs_dirs[i], R_OK | X_OK) == 0)
+        flatpak_bwrap_add_args (bwrap, "--ro-bind", sysfs_dirs[i], sysfs_dirs[i], NULL);
+    }
+
+  if (wayland_socket != NULL)
+    flatpak_bwrap_add_args (bwrap, "--ro-bind", wayland_socket, wayland_socket, NULL);
+
+  flatpak_bwrap_add_args (bwrap, "--bind", socket_dir,
+                          socket_dir_dest != NULL ? socket_dir_dest : socket_dir,
+                          NULL);
+
+  if (!flatpak_bwrap_bundle_args (bwrap, 1, -1, FALSE, error))
+    return FALSE;
+
+  flatpak_bwrap_add_arg (bwrap, "--");
+
+  return TRUE;
+}
+
 static gboolean
 start_xwayland_satellite (FlatpakBwrap  *app_bwrap,
-                          const char    *app_info_path,
                           GError       **error)
 {
   g_autofree char *socket_path = NULL;
@@ -260,7 +359,7 @@ start_xwayland_satellite (FlatpakBwrap  *app_bwrap,
     }
 
   wrapper_bwrap = flatpak_bwrap_new (NULL);
-  if (!flatpak_bwrap_add_wrapper (wrapper_bwrap, app_info_path, socket_dir, NULL, error))
+  if (!add_xwayland_sandbox (wrapper_bwrap, socket_dir, NULL, error))
     return FALSE;
 
   flatpak_bwrap_add_arg (wrapper_bwrap, XWAYLAND_SATELLITE_WRAPPER);
@@ -317,7 +416,6 @@ create_xwayland_run_socket_dir (void)
 
 static gboolean
 start_xwayland_run (FlatpakBwrap  *app_bwrap,
-                    const char    *app_info_path,
                     GError       **error)
 {
   g_autofree char *socket_dir = NULL;
@@ -352,12 +450,12 @@ start_xwayland_run (FlatpakBwrap  *app_bwrap,
     }
 
   wrapper_bwrap = flatpak_bwrap_new (NULL);
-  if (!flatpak_bwrap_add_wrapper (wrapper_bwrap, app_info_path, socket_dir, "/tmp/.X11-unix", error))
+  if (!add_xwayland_sandbox (wrapper_bwrap, socket_dir, "/tmp/.X11-unix", error))
     return FALSE;
 
   flatpak_bwrap_add_arg (wrapper_bwrap, XWAYLAND_RUN_WRAPPER);
 
-  flatpak_bwrap_add_arg (wrapper_bwrap, socket_dir);
+  flatpak_bwrap_add_arg (wrapper_bwrap, "/tmp/.X11-unix");
   flatpak_bwrap_add_arg (wrapper_bwrap, ":99");
 
   flatpak_bwrap_add_arg (wrapper_bwrap, "--fd");
@@ -395,7 +493,6 @@ gboolean
 flatpak_run_add_x11_args (FlatpakBwrap         *bwrap,
                           FlatpakContextShares  shares,
                           gboolean              use_xwayland_run,
-                          const char           *app_info_path,
                           GError              **error)
 {
   if (flatpak_run_has_wayland ())
@@ -403,11 +500,11 @@ flatpak_run_add_x11_args (FlatpakBwrap         *bwrap,
       if (use_xwayland_run)
         {
           g_info ("Starting isolated xwayland-run");
-          return start_xwayland_run (bwrap, app_info_path, error);
+          return start_xwayland_run (bwrap, error);
         }
 
       g_info ("Starting isolated xwayland-satellite");
-      return start_xwayland_satellite (bwrap, app_info_path, error);
+      return start_xwayland_satellite (bwrap, error);
     }
 
   g_info ("Wayland not available, falling back to host X11 passthrough");

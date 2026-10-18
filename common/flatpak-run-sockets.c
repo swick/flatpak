@@ -176,7 +176,6 @@ flatpak_run_add_socket_args_environment (FlatpakBwrap           *bwrap,
                                          FlatpakContextFeatures  features,
                                          const char             *app_id,
                                          const char             *instance_id,
-                                         const char             *app_info_path,
                                          GError                **error)
 {
   gboolean allow_wayland;
@@ -206,7 +205,7 @@ flatpak_run_add_socket_args_environment (FlatpakBwrap           *bwrap,
     }
   else if (allow_x11)
     {
-      if (!flatpak_run_add_x11_args (bwrap, shares, use_xwayland_run, app_info_path, error))
+      if (!flatpak_run_add_x11_args (bwrap, shares, use_xwayland_run, error))
         return FALSE;
     }
   else

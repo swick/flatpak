@@ -31,7 +31,6 @@ G_BEGIN_DECLS
 gboolean flatpak_run_add_x11_args (FlatpakBwrap         *bwrap,
                                    FlatpakContextShares  shares,
                                    gboolean              use_xwayland_run,
-                                   const char           *app_info_path,
                                    GError              **error);
 void     flatpak_run_add_host_x11_args (FlatpakBwrap         *bwrap,
                                         FlatpakContextShares  shares);

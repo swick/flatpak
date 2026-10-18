@@ -640,7 +640,7 @@ flatpak_run_add_environment_args (FlatpakBwrap           *bwrap,
     }
 
   if (!flatpak_run_add_socket_args_environment (bwrap, shares, sockets, features, app_id,
-                                                 instance_id, app_info_path, error))
+                                                 instance_id, error))
     return FALSE;
 
   if (!flatpak_run_add_dbus_args (bwrap, sockets, context, flags, app_id,

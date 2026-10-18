@@ -34,7 +34,6 @@ gboolean flatpak_run_add_socket_args_environment (FlatpakBwrap           *bwrap,
                                                   FlatpakContextFeatures  features,
                                                   const char             *app_id,
                                                   const char             *instance_id,
-                                                  const char             *app_info_path,
                                                   GError                **error);
 void flatpak_run_add_socket_args_late        (FlatpakBwrap          *bwrap,
                                               FlatpakContextShares   shares);
