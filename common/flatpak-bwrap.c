@@ -577,6 +577,7 @@ gboolean
 flatpak_bwrap_add_wrapper (FlatpakBwrap  *bwrap,
                            const char    *app_info_path,
                            const char    *extra_bind_dir,
+                           const char    *extra_bind_dest,
                            GError       **error)
 {
   glnx_autofd int app_info_fd = -1;
@@ -636,7 +637,12 @@ flatpak_bwrap_add_wrapper (FlatpakBwrap  *bwrap,
     }
 
   if (extra_bind_dir)
-    flatpak_bwrap_add_args (bwrap, "--bind", extra_bind_dir, extra_bind_dir, NULL);
+    {
+      flatpak_bwrap_add_args (bwrap, "--bind", extra_bind_dir, extra_bind_dir, NULL);
+
+      if (extra_bind_dest)
+        flatpak_bwrap_add_args (bwrap, "--bind", extra_bind_dir, extra_bind_dest, NULL);
+    }
 
   flatpak_bwrap_add_args (bwrap, "--perms", "0600", NULL);
   flatpak_bwrap_add_args_data_fd (bwrap, "--file", g_steal_fd (&app_info_fd), "/.flatpak-info");

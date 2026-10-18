@@ -170,18 +170,20 @@ flatpak_run_add_ssh_args (FlatpakBwrap *bwrap)
  * use of a proxy.
  */
 gboolean
-flatpak_run_add_socket_args_environment (FlatpakBwrap         *bwrap,
-                                         FlatpakContextShares  shares,
-                                         FlatpakContextSockets sockets,
-                                         const char           *app_id,
-                                         const char           *instance_id,
-                                         const char           *app_info_path,
-                                         GError              **error)
+flatpak_run_add_socket_args_environment (FlatpakBwrap           *bwrap,
+                                         FlatpakContextShares    shares,
+                                         FlatpakContextSockets   sockets,
+                                         FlatpakContextFeatures  features,
+                                         const char             *app_id,
+                                         const char             *instance_id,
+                                         const char             *app_info_path,
+                                         GError                **error)
 {
   gboolean allow_wayland;
   gboolean inherit_wayland_socket;
   gboolean allow_x11;
   gboolean allow_host_x11;
+  gboolean use_xwayland_run;
 
   allow_wayland = (sockets & FLATPAK_CONTEXT_SOCKET_WAYLAND) != 0;
   inherit_wayland_socket = (sockets & FLATPAK_CONTEXT_SOCKET_INHERIT_WAYLAND_SOCKET) != 0;
@@ -192,6 +194,7 @@ flatpak_run_add_socket_args_environment (FlatpakBwrap         *bwrap,
 
   allow_x11 = (sockets & FLATPAK_CONTEXT_SOCKET_X11) != 0;
   allow_host_x11 = (sockets & FLATPAK_CONTEXT_SOCKET_HOST_X11) != 0;
+  use_xwayland_run = (features & FLATPAK_CONTEXT_FEATURE_ROOTFUL_X11) != 0;
 
   /* Always cover /tmp/.X11-unix so we never see the host one even with
    * --filesystem=/tmp.  Both X11 code paths bind-mount on top of this. */
@@ -203,7 +206,7 @@ flatpak_run_add_socket_args_environment (FlatpakBwrap         *bwrap,
     }
   else if (allow_x11)
     {
-      if (!flatpak_run_add_x11_args (bwrap, shares, app_info_path, error))
+      if (!flatpak_run_add_x11_args (bwrap, shares, use_xwayland_run, app_info_path, error))
         return FALSE;
     }
   else

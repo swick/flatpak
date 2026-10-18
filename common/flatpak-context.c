@@ -87,6 +87,7 @@ const char *flatpak_context_features[] = {
   "bluetooth",
   "canbus",
   "per-app-dev-shm",
+  "rootful-x11",
   NULL
 };
 

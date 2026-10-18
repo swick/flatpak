@@ -260,7 +260,7 @@ start_xwayland_satellite (FlatpakBwrap  *app_bwrap,
     }
 
   wrapper_bwrap = flatpak_bwrap_new (NULL);
-  if (!flatpak_bwrap_add_wrapper (wrapper_bwrap, app_info_path, socket_dir, error))
+  if (!flatpak_bwrap_add_wrapper (wrapper_bwrap, app_info_path, socket_dir, NULL, error))
     return FALSE;
 
   flatpak_bwrap_add_arg (wrapper_bwrap, XWAYLAND_SATELLITE_WRAPPER);
@@ -299,14 +299,113 @@ start_xwayland_satellite (FlatpakBwrap  *app_bwrap,
   return TRUE;
 }
 
+static char *
+create_xwayland_run_socket_dir (void)
+{
+  g_autofree char *user_runtime_dir = flatpak_get_real_xdg_runtime_dir ();
+  g_autofree char *base_dir = g_build_filename (user_runtime_dir, ".xwayland-run", NULL);
+  g_autofree char *socket_dir = g_build_filename (base_dir, "x11-XXXXXX", NULL);
+
+  if (!glnx_shutil_mkdir_p_at (AT_FDCWD, base_dir, 0755, NULL, NULL))
+    return NULL;
+
+  if (g_mkdtemp (socket_dir) == NULL)
+    return NULL;
+
+  return g_steal_pointer (&socket_dir);
+}
+
+static gboolean
+start_xwayland_run (FlatpakBwrap  *app_bwrap,
+                    const char    *app_info_path,
+                    GError       **error)
+{
+  g_autofree char *socket_dir = NULL;
+  g_autofree char *socket_path = NULL;
+  g_autofree char *commandline = NULL;
+  g_autoptr(FlatpakBwrap) wrapper_bwrap = NULL;
+  int sync_fd_app = -1;
+  g_autofd int sync_fd_wrapper = -1;
+  char x;
+
+  socket_dir = create_xwayland_run_socket_dir ();
+  if (socket_dir == NULL)
+    {
+      g_set_error_literal (error, G_IO_ERROR, G_IO_ERROR_FAILED,
+                           _("Failed to create xwayland-run socket directory"));
+      return FALSE;
+    }
+
+  socket_path = g_build_filename (socket_dir, "X99", NULL);
+
+  flatpak_bwrap_set_env (app_bwrap, "DISPLAY", ":99", TRUE);
+  flatpak_bwrap_unset_env (app_bwrap, "XAUTHORITY");
+  flatpak_bwrap_add_args (app_bwrap,
+                          "--ro-bind", socket_path, "/tmp/.X11-unix/X99",
+                          NULL);
+
+  if (!flatpak_bwrap_add_sync_fd (app_bwrap, &sync_fd_wrapper, &sync_fd_app))
+    {
+      g_set_error_literal (error, G_IO_ERROR, g_io_error_from_errno (errno),
+                           _("Unable to create sync pipe"));
+      return FALSE;
+    }
+
+  wrapper_bwrap = flatpak_bwrap_new (NULL);
+  if (!flatpak_bwrap_add_wrapper (wrapper_bwrap, app_info_path, socket_dir, "/tmp/.X11-unix", error))
+    return FALSE;
+
+  flatpak_bwrap_add_arg (wrapper_bwrap, XWAYLAND_RUN_WRAPPER);
+
+  flatpak_bwrap_add_arg (wrapper_bwrap, socket_dir);
+  flatpak_bwrap_add_arg (wrapper_bwrap, ":99");
+
+  flatpak_bwrap_add_arg (wrapper_bwrap, "--fd");
+  flatpak_bwrap_add_arg_printf (wrapper_bwrap, "%d", sync_fd_wrapper);
+  flatpak_bwrap_add_fd (wrapper_bwrap, g_steal_fd (&sync_fd_wrapper));
+
+  flatpak_bwrap_finish (wrapper_bwrap);
+
+  commandline = flatpak_quote_argv ((const char **) wrapper_bwrap->argv->pdata, -1);
+  g_info ("Starting xwayland-run wrapper: %s", commandline);
+
+  if (!g_spawn_async (NULL,
+                      (char **) wrapper_bwrap->argv->pdata,
+                      NULL,
+                      G_SPAWN_SEARCH_PATH | G_SPAWN_LEAVE_DESCRIPTORS_OPEN,
+                      flatpak_bwrap_child_setup_cb, wrapper_bwrap->fds,
+                      NULL, error))
+    return FALSE;
+
+  g_clear_pointer (&wrapper_bwrap, flatpak_bwrap_free);
+
+  if (read (sync_fd_app, &x, 1) != 1)
+    {
+      g_set_error_literal (error, G_IO_ERROR, g_io_error_from_errno (errno),
+                           _("Failed to sync with xwayland-run"));
+      return FALSE;
+    }
+
+  g_info ("xwayland-run listening on display :99");
+
+  return TRUE;
+}
+
 gboolean
 flatpak_run_add_x11_args (FlatpakBwrap         *bwrap,
                           FlatpakContextShares  shares,
+                          gboolean              use_xwayland_run,
                           const char           *app_info_path,
                           GError              **error)
 {
   if (flatpak_run_has_wayland ())
     {
+      if (use_xwayland_run)
+        {
+          g_info ("Starting isolated xwayland-run");
+          return start_xwayland_run (bwrap, app_info_path, error);
+        }
+
       g_info ("Starting isolated xwayland-satellite");
       return start_xwayland_satellite (bwrap, app_info_path, error);
     }

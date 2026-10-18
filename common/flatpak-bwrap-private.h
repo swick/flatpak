@@ -101,6 +101,7 @@ void          flatpak_bwrap_child_setup (GArray *fd_array,
 gboolean      flatpak_bwrap_add_wrapper (FlatpakBwrap  *bwrap,
                                         const char    *app_info_path,
                                         const char    *extra_bind_dir,
+                                        const char    *extra_bind_dest,
                                         GError       **error);
 
 gboolean      flatpak_bwrap_add_sync_fd (FlatpakBwrap *bwrap,

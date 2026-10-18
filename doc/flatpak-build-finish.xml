@@ -249,7 +249,7 @@
                     Allow access to a specific feature. This updates
                     the [Context] group in the metadata.
                     FEATURE must be one of: devel, multiarch, bluetooth, canbus,
-                    per-app-dev-shm.
+                    per-app-dev-shm, rootful-x11.
                     This option can be used multiple times.
                  </para><para>
                     The <code>devel</code> feature allows the application to
@@ -277,6 +277,13 @@
                     application, any unrestricted subsandboxes that it creates,
                     and any other instances of the application that are
                     launched while it is running.
+                </para>
+                <para>
+                    The <code>rootful-x11</code> feature uses a rootful
+                    Xwayland server (via <command>xwayland-run</command>)
+                    with a window manager instead of the default rootless
+                    xwayland-satellite when the <code>x11</code> socket
+                    permission is active.
                 </para></listitem>
             </varlistentry>
 
@@ -287,7 +294,7 @@
                     Disallow access to a specific feature. This updates
                     the [Context] group in the metadata.
                     FEATURE must be one of: devel, multiarch, bluetooth, canbus,
-                    per-app-dev-shm.
+                    per-app-dev-shm, rootful-x11.
                     This option can be used multiple times.
                 </para></listitem>
             </varlistentry>

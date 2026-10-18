@@ -447,7 +447,8 @@
                 <listitem><para>
                     Allow access to a specific feature. This overrides to
                     the Context section from the application metadata.
-                    <arg choice="plain">FEATURE</arg> must be one of: devel, multiarch, bluetooth.
+                    <arg choice="plain">FEATURE</arg> must be one of: devel, multiarch, bluetooth,
+                    canbus, per-app-dev-shm, rootful-x11.
                     This option can be used multiple times.
                     </para><para>
                     See <citerefentry><refentrytitle>flatpak-build-finish</refentrytitle><manvolnum>1</manvolnum></citerefentry>
@@ -461,7 +462,8 @@
                 <listitem><para>
                     Disallow access to a specific feature. This overrides to
                     the Context section from the application metadata.
-                    <arg choice="plain">FEATURE</arg> must be one of: devel, multiarch, bluetooth.
+                    <arg choice="plain">FEATURE</arg> must be one of: devel, multiarch, bluetooth,
+                    canbus, per-app-dev-shm, rootful-x11.
                     This option can be used multiple times.
                 </para></listitem>
             </varlistentry>
@@ -473,7 +475,8 @@
                     Allow access to a specific feature conditionally,
                     only when the specified condition is met at runtime.
                     This overrides to the Context section from the application metadata.
-                    <arg choice="plain">FEATURE</arg> must be one of: devel, multiarch, bluetooth.
+                    <arg choice="plain">FEATURE</arg> must be one of: devel, multiarch, bluetooth,
+                    canbus, per-app-dev-shm, rootful-x11.
                     <arg choice="plain">CONDITION</arg> must be one of:
                     <option>true</option>, <option>false</option>,
                     <option>has-input-device</option>, <option>has-wayland</option>,

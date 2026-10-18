@@ -94,7 +94,7 @@ flatpak_run_maybe_start_dbus_proxy (FlatpakBwrap *app_bwrap,
     g_autofree char *user_runtime_dir = flatpak_get_real_xdg_runtime_dir ();
     g_autofree char *proxy_socket_dir = g_build_filename (user_runtime_dir, ".dbus-proxy/", NULL);
 
-    if (!flatpak_bwrap_add_wrapper (proxy_bwrap, app_info_path, proxy_socket_dir, error))
+    if (!flatpak_bwrap_add_wrapper (proxy_bwrap, app_info_path, proxy_socket_dir, NULL, error))
       return FALSE;
   }
 

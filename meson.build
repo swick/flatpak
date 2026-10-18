@@ -373,6 +373,7 @@ else
 endif
 
 cdata.set_quoted('XWAYLAND_SATELLITE_WRAPPER', get_option('prefix') / get_option('libexecdir') / 'flatpak-xwayland-satellite-wrapper')
+cdata.set_quoted('XWAYLAND_RUN_WRAPPER', get_option('prefix') / get_option('libexecdir') / 'flatpak-xwayland-run-wrapper')
 
 # Flatpak is Linux-specific, so we assume this is always supported
 cdata.set('FLATPAK_EXTERN', '__attribute__((visibility("default"))) extern')
@@ -494,6 +495,7 @@ subdir('portal')
 subdir('revokefs')
 subdir('session-helper')
 subdir('xwayland-satellite-wrapper')
+subdir('xwayland-run-wrapper')
 subdir('scripts')
 
 subdir('completion')
