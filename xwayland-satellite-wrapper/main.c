@@ -17,6 +17,7 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <poll.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -175,20 +176,17 @@ main (int    argc,
 
   if (sync_fd >= 0)
     {
-      /* Watch for sync fd closure (app exited) in parallel with child */
-      fd_set rfds;
+      struct pollfd pfd = { .fd = sync_fd, .events = 0 };
+
       while (1)
         {
           int ret;
-          FD_ZERO (&rfds);
-          FD_SET (sync_fd, &rfds);
 
-          ret = select (sync_fd + 1, &rfds, NULL, NULL, NULL);
+          ret = poll (&pfd, 1, -1);
           if (ret < 0)
             {
               if (errno == EINTR)
                 {
-                  /* Check if child exited due to signal forwarding */
                   if (waitpid (child_pid, &wait_status, WNOHANG) > 0)
                     return WIFEXITED (wait_status) ? WEXITSTATUS (wait_status) : 1;
                   continue;
@@ -196,15 +194,10 @@ main (int    argc,
               break;
             }
 
-          if (FD_ISSET (sync_fd, &rfds))
+          if (pfd.revents & (POLLERR | POLLHUP))
             {
-              char buf;
-              if (read (sync_fd, &buf, 1) <= 0)
-                {
-                  /* Sync fd closed — app exited */
-                  kill (child_pid, SIGTERM);
-                  break;
-                }
+              kill (child_pid, SIGTERM);
+              break;
             }
         }
     }
