@@ -25,12 +25,17 @@
 #include "flatpak-bwrap-private.h"
 #include "flatpak-common-types-private.h"
 #include "flatpak-context-private.h"
+#include "flatpak-ref-utils-private.h"
 
 G_BEGIN_DECLS
 
 gboolean flatpak_run_add_x11_args (FlatpakBwrap         *bwrap,
                                    FlatpakContextShares  shares,
                                    gboolean              use_xwayland_run,
+                                   GFile                *runtime_files,
+                                   GKeyFile             *runtime_metakey,
+                                   FlatpakDecomposed    *runtime_ref,
+                                   GCancellable         *cancellable,
                                    GError              **error);
 void     flatpak_run_add_host_x11_args (FlatpakBwrap         *bwrap,
                                         FlatpakContextShares  shares);

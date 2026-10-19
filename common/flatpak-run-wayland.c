@@ -292,12 +292,11 @@ flatpak_run_add_wayland_args (FlatpakBwrap *bwrap,
 
   g_info ("Allowing wayland access");
 
-  g_assert (app_id && instance_id);
-
   wayland_display = get_wayland_display_name ();
 
 #ifdef ENABLE_WAYLAND_SECURITY_CONTEXT
-  if (flatpak_run_create_wayland_security_context (bwrap, app_id, instance_id,
+  if (app_id != NULL && instance_id != NULL &&
+      flatpak_run_create_wayland_security_context (bwrap, app_id, instance_id,
                                                    wayland_display,
                                                    &security_context_available,
                                                    &wayland_socket))

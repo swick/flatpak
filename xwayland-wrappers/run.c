@@ -26,6 +26,8 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#define XWAYLAND_EXT_DIR "/usr/lib/extensions/xwayland"
+
 static pid_t child_pid = -1;
 
 static void
@@ -33,6 +35,33 @@ signal_handler (int sig)
 {
   if (child_pid > 0)
     kill (-child_pid, sig);
+}
+
+static void
+prepend_env (const char *var,
+             const char *value)
+{
+  const char *old = getenv (var);
+
+  if (old != NULL && *old != '\0')
+    {
+      char buf[4096];
+
+      snprintf (buf, sizeof (buf), "%s:%s", value, old);
+      setenv (var, buf, 1);
+    }
+  else
+    {
+      setenv (var, value, 1);
+    }
+}
+
+static void
+setup_extension_env (void)
+{
+  prepend_env ("PATH", XWAYLAND_EXT_DIR "/bin");
+  prepend_env ("LD_LIBRARY_PATH", XWAYLAND_EXT_DIR "/lib");
+  prepend_env ("PYTHONPATH", XWAYLAND_EXT_DIR "/lib/python3.14/site-packages");
 }
 
 static int
@@ -59,7 +88,6 @@ main (int    argc,
       char **argv)
 {
   const char *xwayland_run;
-  const char *wm;
   const char *socket_dir = NULL;
   const char *display = NULL;
   int sync_fd = -1;
@@ -100,13 +128,11 @@ main (int    argc,
       return 1;
     }
 
+  setup_extension_env ();
+
   xwayland_run = getenv ("FLATPAK_XWAYLAND_RUN");
   if (xwayland_run == NULL)
-    xwayland_run = "xwayland-run";
-
-  wm = getenv ("FLATPAK_XWAYLAND_RUN_WM");
-  if (wm == NULL)
-    wm = "metacity";
+    xwayland_run = XWAYLAND_EXT_DIR "/bin/xwayland-run";
 
   snprintf (socket_path, sizeof (socket_path), "%s/X%s", socket_dir, display + 1);
 
@@ -125,7 +151,7 @@ main (int    argc,
         close (sync_fd);
 
       execlp (xwayland_run, xwayland_run,
-              "-ac", display, "--", wm, NULL);
+              "-ac", display, "--", "sleep", "infinity", NULL);
       perror ("Failed to exec xwayland-run");
       _exit (127);
     }

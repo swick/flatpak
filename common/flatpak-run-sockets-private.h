@@ -25,6 +25,7 @@
 #include "flatpak-bwrap-private.h"
 #include "flatpak-common-types-private.h"
 #include "flatpak-context-private.h"
+#include "flatpak-ref-utils-private.h"
 
 G_BEGIN_DECLS
 
@@ -34,6 +35,10 @@ gboolean flatpak_run_add_socket_args_environment (FlatpakBwrap           *bwrap,
                                                   FlatpakContextFeatures  features,
                                                   const char             *app_id,
                                                   const char             *instance_id,
+                                                  GFile                  *runtime_files,
+                                                  GKeyFile               *runtime_metakey,
+                                                  FlatpakDecomposed      *runtime_ref,
+                                                  GCancellable           *cancellable,
                                                   GError                **error);
 void flatpak_run_add_socket_args_late        (FlatpakBwrap          *bwrap,
                                               FlatpakContextShares   shares);

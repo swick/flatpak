@@ -28,6 +28,8 @@
 #include <X11/Xauth.h>
 #endif
 
+#include "flatpak-dir-utils-private.h"
+#include "flatpak-run-private.h"
 #include "flatpak-run-wayland-private.h"
 #include "flatpak-utils-private.h"
 
@@ -223,109 +225,96 @@ create_proxy_socket_path (void)
   return g_steal_pointer (&socket_path);
 }
 
-static const char * const usrmerged_dirs[] = { "bin", "lib32", "lib64", "lib", "sbin" };
-static const char * const sysfs_dirs[] =
+static FlatpakBwrap *
+create_xwayland_sandbox (GFile              *runtime_files,
+                         GKeyFile           *runtime_metakey,
+                         FlatpakDecomposed  *runtime_ref,
+                         const char         *socket_dir,
+                         const char         *socket_dir_dest,
+                         GCancellable       *cancellable,
+                         GError            **error)
 {
-  "/sys/block",
-  "/sys/bus",
-  "/sys/class",
-  "/sys/dev",
-  "/sys/devices",
-};
+  g_autoptr(FlatpakBwrap) bwrap = NULL;
+  g_autoptr(FlatpakContext) context = NULL;
+  g_auto(GStrv) minimal_envp = NULL;
+  g_autofree char *arch = flatpak_decomposed_dup_arch (runtime_ref);
+  g_autofree char *runtime_ld_path = NULL;
+  glnx_autofd int usr_fd = -1;
+  FlatpakRunFlags run_flags;
 
-static gboolean
-add_xwayland_sandbox (FlatpakBwrap  *bwrap,
-                      const char    *socket_dir,
-                      const char    *socket_dir_dest,
-                      GError       **error)
-{
-  g_autofree char *xdg_runtime_dir = NULL;
-  g_autofree char *wayland_socket = NULL;
-  const char *wayland_display;
-  const char *home_dir;
-  size_t i;
+  usr_fd = glnx_chaseat (AT_FDCWD,
+                          flatpak_file_get_path_cached (runtime_files),
+                          GLNX_CHASE_MUST_BE_DIRECTORY,
+                          error);
+  if (usr_fd < 0)
+    return NULL;
 
-  xdg_runtime_dir = flatpak_get_real_xdg_runtime_dir ();
-  wayland_display = g_getenv ("WAYLAND_DISPLAY");
-
-  if (wayland_display != NULL)
-    {
-      if (wayland_display[0] == '/')
-        wayland_socket = g_strdup (wayland_display);
-      else if (xdg_runtime_dir != NULL)
-        wayland_socket = g_build_filename (xdg_runtime_dir, wayland_display, NULL);
-    }
+  minimal_envp = flatpak_run_get_minimal_env (/* devel = */ FALSE,
+                                              /* use_ld_so_cache = */ FALSE);
+  bwrap = flatpak_bwrap_new (minimal_envp);
 
   flatpak_bwrap_add_arg (bwrap, flatpak_get_bwrap ());
 
-  flatpak_bwrap_add_args (bwrap,
-                          "--unshare-ipc",
-                          "--unshare-net",
-                          "--unshare-pid",
-                          "--die-with-parent",
-                          "--ro-bind", "/usr", "/usr",
-                          "--ro-bind", "/etc", "/etc",
-                          "--tmpfs", "/tmp",
-                          "--tmpfs", "/run",
-                          "--proc", "/proc",
-                          "--dev", "/dev",
-                          "--setenv", "GIO_USE_VFS", "local",
-                          "--setenv", "XDG_DATA_DIRS", "/usr/local/share:/usr/share",
-                          "--unsetenv", "DBUS_SESSION_BUS_ADDRESS",
-                          "--unsetenv", "TMPDIR",
-                          NULL);
+  if (!flatpak_bwrap_add_args_data_fd_dup (bwrap, "--ro-bind-fd", usr_fd, "/usr", error))
+    return NULL;
+  flatpak_bwrap_add_args (bwrap, "--lock-file", "/usr/.ref", NULL);
 
-  home_dir = g_get_home_dir ();
-  if (home_dir != NULL)
-    flatpak_bwrap_add_args (bwrap, "--dir", home_dir, NULL);
+  if (!flatpak_run_add_extension_args (bwrap, runtime_metakey, runtime_ref,
+                                       /* use_ld_so_cache = */ FALSE, "/usr",
+                                       NULL, &runtime_ld_path,
+                                       cancellable, error))
+    return NULL;
 
-  for (i = 0; i < G_N_ELEMENTS (usrmerged_dirs); i++)
-    {
-      g_autofree char *path = g_strdup_printf ("/%s", usrmerged_dirs[i]);
-      g_autofree char *target = NULL;
+  if (runtime_ld_path)
+    flatpak_run_extend_ld_path (bwrap, NULL, runtime_ld_path);
 
-      if (!g_file_test (path, G_FILE_TEST_EXISTS))
-        continue;
+  run_flags = (FLATPAK_RUN_FLAG_SANDBOX |
+               FLATPAK_RUN_FLAG_NO_SESSION_HELPER |
+               FLATPAK_RUN_FLAG_NO_SESSION_BUS_PROXY |
+               FLATPAK_RUN_FLAG_NO_SYSTEM_BUS_PROXY |
+               FLATPAK_RUN_FLAG_NO_A11Y_BUS_PROXY);
 
-      if (g_file_test (path, G_FILE_TEST_IS_SYMLINK))
-        {
-          target = g_file_read_link (path, NULL);
-          if (target != NULL)
-            flatpak_bwrap_add_args (bwrap, "--symlink", target, path, NULL);
-        }
-      else
-        {
-          flatpak_bwrap_add_args (bwrap, "--ro-bind", path, path, NULL);
-        }
-    }
+  if (!flatpak_run_setup_base_argv (bwrap, usr_fd, NULL, arch,
+                                    run_flags, error))
+    return NULL;
 
-  if (g_file_test ("/dev/dri", G_FILE_TEST_IS_DIR))
-    flatpak_bwrap_add_args (bwrap, "--dev-bind", "/dev/dri", "/dev/dri", NULL);
+  context = flatpak_context_new ();
 
-  for (i = 0; i < G_N_ELEMENTS (sysfs_dirs); i++)
-    {
-      if (access (sysfs_dirs[i], R_OK | X_OK) == 0)
-        flatpak_bwrap_add_args (bwrap, "--ro-bind", sysfs_dirs[i], sysfs_dirs[i], NULL);
-    }
+  if (!flatpak_run_add_environment_args (bwrap, NULL, run_flags, NULL,
+                                         context,
+                                         0,
+                                         FLATPAK_CONTEXT_DEVICE_DRI,
+                                         FLATPAK_CONTEXT_SOCKET_WAYLAND,
+                                         0,
+                                         NULL, NULL, -1,
+                                         NULL, NULL,
+                                         NULL, NULL, NULL,
+                                         cancellable, error))
+    return NULL;
 
-  if (wayland_socket != NULL)
-    flatpak_bwrap_add_args (bwrap, "--ro-bind", wayland_socket, wayland_socket, NULL);
+  flatpak_bwrap_populate_runtime_dir (bwrap, NULL);
 
   flatpak_bwrap_add_args (bwrap, "--bind", socket_dir,
                           socket_dir_dest != NULL ? socket_dir_dest : socket_dir,
                           NULL);
 
+  flatpak_bwrap_envp_to_args (bwrap);
+
   if (!flatpak_bwrap_bundle_args (bwrap, 1, -1, FALSE, error))
-    return FALSE;
+    return NULL;
 
   flatpak_bwrap_add_arg (bwrap, "--");
 
-  return TRUE;
+  return g_steal_pointer (&bwrap);
 }
 
 static gboolean
-start_xwayland_satellite (FlatpakBwrap  *app_bwrap,
-                          GError       **error)
+start_xwayland_satellite (FlatpakBwrap       *app_bwrap,
+                          GFile              *runtime_files,
+                          GKeyFile           *runtime_metakey,
+                          FlatpakDecomposed  *runtime_ref,
+                          GCancellable       *cancellable,
+                          GError            **error)
 {
   g_autofree char *socket_path = NULL;
   g_autofree char *socket_dir = NULL;
@@ -348,7 +337,7 @@ start_xwayland_satellite (FlatpakBwrap  *app_bwrap,
   flatpak_bwrap_set_env (app_bwrap, "DISPLAY", ":99", TRUE);
   flatpak_bwrap_unset_env (app_bwrap, "XAUTHORITY");
   flatpak_bwrap_add_args (app_bwrap,
-                          "--ro-bind", socket_path, "/tmp/.X11-unix/X99",
+                          "--bind", socket_path, "/tmp/.X11-unix/X99",
                           NULL);
 
   if (!flatpak_bwrap_add_sync_fd (app_bwrap, &sync_fd_wrapper, &sync_fd_app))
@@ -358,8 +347,11 @@ start_xwayland_satellite (FlatpakBwrap  *app_bwrap,
       return FALSE;
     }
 
-  wrapper_bwrap = flatpak_bwrap_new (NULL);
-  if (!add_xwayland_sandbox (wrapper_bwrap, socket_dir, NULL, error))
+  wrapper_bwrap = create_xwayland_sandbox (runtime_files,
+                                            runtime_metakey, runtime_ref,
+                                            socket_dir, NULL,
+                                            cancellable, error);
+  if (wrapper_bwrap == NULL)
     return FALSE;
 
   flatpak_bwrap_add_arg (wrapper_bwrap, XWAYLAND_SATELLITE_WRAPPER);
@@ -415,8 +407,12 @@ create_xwayland_run_socket_dir (void)
 }
 
 static gboolean
-start_xwayland_run (FlatpakBwrap  *app_bwrap,
-                    GError       **error)
+start_xwayland_run (FlatpakBwrap       *app_bwrap,
+                    GFile              *runtime_files,
+                    GKeyFile           *runtime_metakey,
+                    FlatpakDecomposed  *runtime_ref,
+                    GCancellable       *cancellable,
+                    GError            **error)
 {
   g_autofree char *socket_dir = NULL;
   g_autofree char *socket_path = NULL;
@@ -439,7 +435,7 @@ start_xwayland_run (FlatpakBwrap  *app_bwrap,
   flatpak_bwrap_set_env (app_bwrap, "DISPLAY", ":99", TRUE);
   flatpak_bwrap_unset_env (app_bwrap, "XAUTHORITY");
   flatpak_bwrap_add_args (app_bwrap,
-                          "--ro-bind", socket_path, "/tmp/.X11-unix/X99",
+                          "--bind", socket_path, "/tmp/.X11-unix/X99",
                           NULL);
 
   if (!flatpak_bwrap_add_sync_fd (app_bwrap, &sync_fd_wrapper, &sync_fd_app))
@@ -449,8 +445,11 @@ start_xwayland_run (FlatpakBwrap  *app_bwrap,
       return FALSE;
     }
 
-  wrapper_bwrap = flatpak_bwrap_new (NULL);
-  if (!add_xwayland_sandbox (wrapper_bwrap, socket_dir, "/tmp/.X11-unix", error))
+  wrapper_bwrap = create_xwayland_sandbox (runtime_files,
+                                            runtime_metakey, runtime_ref,
+                                            socket_dir, "/tmp/.X11-unix",
+                                            cancellable, error);
+  if (wrapper_bwrap == NULL)
     return FALSE;
 
   flatpak_bwrap_add_arg (wrapper_bwrap, XWAYLAND_RUN_WRAPPER);
@@ -493,21 +492,49 @@ gboolean
 flatpak_run_add_x11_args (FlatpakBwrap         *bwrap,
                           FlatpakContextShares  shares,
                           gboolean              use_xwayland_run,
+                          GFile                *runtime_files,
+                          GKeyFile             *runtime_metakey,
+                          FlatpakDecomposed    *runtime_ref,
+                          GCancellable         *cancellable,
                           GError              **error)
 {
   if (flatpak_run_has_wayland ())
     {
-      if (use_xwayland_run)
+      g_autofree char *arch = flatpak_decomposed_dup_arch (runtime_ref);
+      const char *branch = flatpak_decomposed_get_branch (runtime_ref);
+      g_autoptr(FlatpakDecomposed) ext_ref = NULL;
+      g_autoptr(GFile) ext_deploy = NULL;
+
+      ext_ref = flatpak_decomposed_new_from_parts (FLATPAK_KINDS_RUNTIME,
+                                                    "org.freedesktop.Platform.XWayland",
+                                                    arch, branch, NULL);
+      if (ext_ref)
+        ext_deploy = flatpak_find_deploy_dir_for_ref (ext_ref, NULL,
+                                                       cancellable, NULL);
+
+      if (ext_deploy != NULL)
         {
-          g_info ("Starting isolated xwayland-run");
-          return start_xwayland_run (bwrap, error);
+          if (use_xwayland_run)
+            {
+              g_info ("Starting isolated xwayland-run");
+              return start_xwayland_run (bwrap, runtime_files,
+                                         runtime_metakey, runtime_ref,
+                                         cancellable, error);
+            }
+
+          g_info ("Starting isolated xwayland-satellite");
+          return start_xwayland_satellite (bwrap, runtime_files,
+                                           runtime_metakey, runtime_ref,
+                                           cancellable, error);
         }
 
-      g_info ("Starting isolated xwayland-satellite");
-      return start_xwayland_satellite (bwrap, error);
+      g_info ("XWayland extension not available, falling back to host X11 passthrough");
+    }
+  else
+    {
+      g_info ("Wayland not available, falling back to host X11 passthrough");
     }
 
-  g_info ("Wayland not available, falling back to host X11 passthrough");
   flatpak_run_add_host_x11_args (bwrap, shares);
 
   return TRUE;

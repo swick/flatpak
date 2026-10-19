@@ -27,8 +27,36 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#define XWAYLAND_EXT_DIR "/usr/lib/extensions/xwayland"
+
 static char *socket_path = NULL;
 static pid_t child_pid = -1;
+
+static void
+prepend_env (const char *var,
+             const char *value)
+{
+  const char *old = getenv (var);
+
+  if (old != NULL && *old != '\0')
+    {
+      char buf[4096];
+
+      snprintf (buf, sizeof (buf), "%s:%s", value, old);
+      setenv (var, buf, 1);
+    }
+  else
+    {
+      setenv (var, value, 1);
+    }
+}
+
+static void
+setup_extension_env (void)
+{
+  prepend_env ("PATH", XWAYLAND_EXT_DIR "/bin");
+  prepend_env ("LD_LIBRARY_PATH", XWAYLAND_EXT_DIR "/lib");
+}
 
 static void
 cleanup (void)
@@ -127,9 +155,11 @@ main (int    argc,
       return 1;
     }
 
+  setup_extension_env ();
+
   xwayland_satellite = getenv ("FLATPAK_XWAYLAND_SATELLITE");
   if (xwayland_satellite == NULL)
-    xwayland_satellite = "xwayland-satellite";
+    xwayland_satellite = XWAYLAND_EXT_DIR "/bin/xwayland-satellite";
 
   atexit (cleanup);
 

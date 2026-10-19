@@ -388,6 +388,9 @@ flatpak_run_add_environment_args (FlatpakBwrap           *bwrap,
                                   int                     per_app_dir_lock_fd,
                                   const char             *instance_id,
                                   FlatpakExports        **exports_out,
+                                  GFile                  *runtime_files,
+                                  GKeyFile               *runtime_metakey,
+                                  FlatpakDecomposed      *runtime_ref,
                                   GCancellable           *cancellable,
                                   GError                **error)
 {
@@ -640,7 +643,9 @@ flatpak_run_add_environment_args (FlatpakBwrap           *bwrap,
     }
 
   if (!flatpak_run_add_socket_args_environment (bwrap, shares, sockets, features, app_id,
-                                                 instance_id, error))
+                                                 instance_id, runtime_files,
+                                                 runtime_metakey, runtime_ref,
+                                                 cancellable, error))
     return FALSE;
 
   if (!flatpak_run_add_dbus_args (bwrap, sockets, context, flags, app_id,
@@ -3868,7 +3873,10 @@ flatpak_run_app (FlatpakDecomposed   *app_ref,
                                          shares, devices, sockets, features,
                                          app_id_dir, previous_app_id_dirs,
                                          per_app_dir_lock_fd, instance_id,
-                                         &exports, cancellable, error))
+                                         &exports,
+                                         runtime_files,
+                                         runtime_metakey, runtime_ref,
+                                         cancellable, error))
     return FALSE;
 
   if (per_app_dir_lock_path != NULL)
